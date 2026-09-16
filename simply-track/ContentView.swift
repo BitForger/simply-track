@@ -28,7 +28,7 @@ struct ContentView: View {
     private let reminderManager = ReminderManager()
 
     @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
-    @AppStorage("useCloudKitSync") private var useCloudKitSync = true
+    @AppStorage("useHealthSync") private var useHealthSync = true
     @AppStorage("enableReminders") private var enableReminders = false
     @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
 
@@ -66,7 +66,7 @@ struct ContentView: View {
                 SettingsView(
                     profile: activeProfile,
                     hasCompletedQuickStart: $hasCompletedQuickStart,
-                    useCloudKitSync: $useCloudKitSync,
+                    useHealthSync: $useHealthSync,
                     enableReminders: $enableReminders,
                     includeActiveCaloriesInMax: $includeActiveCaloriesInMax,
                     onOpenQuickStart: { showingQuickStartSheet = true },
@@ -88,6 +88,7 @@ struct ContentView: View {
             quickStartSheet
         }
         .task {
+            migrateLegacyHealthSyncPreferenceIfNeeded()
             bootstrapIfNeeded()
             await refreshFromHealthKit()
         }
@@ -96,6 +97,20 @@ struct ContentView: View {
                 await updateReminderSchedule(enabled: enabled)
             }
         }
+    }
+
+    private func migrateLegacyHealthSyncPreferenceIfNeeded() {
+        let defaults = UserDefaults.standard
+        let newKey = "useHealthSync"
+        let legacyKey = "useCloudKitSync"
+
+        guard defaults.object(forKey: newKey) == nil,
+              let legacyValue = defaults.object(forKey: legacyKey) as? Bool else {
+            return
+        }
+
+        defaults.set(legacyValue, forKey: newKey)
+        useHealthSync = legacyValue
     }
 
     private var activeProfile: UserProfile {
@@ -110,7 +125,7 @@ struct ContentView: View {
 
     private var quickStartSheet: some View {
         QuickStartOnboardingView(
-            useCloudKitSync: $useCloudKitSync,
+            useHealthSync: $useHealthSync,
             enableReminders: $enableReminders,
             onRequestHealthKit: {
                 await authorizeAndSyncHealthKit()
@@ -671,7 +686,7 @@ private struct AddFoodEntrySheet: View {
 }
 
 private struct QuickStartOnboardingView: View {
-    @Binding var useCloudKitSync: Bool
+    @Binding var useHealthSync: Bool
     @Binding var enableReminders: Bool
 
     let onRequestHealthKit: () async -> Void
@@ -725,7 +740,7 @@ private struct QuickStartOnboardingView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Privacy first")
                 .font(.title3.weight(.semibold))
-            Text("Your entries are stored locally first. You control Health and Cloud sync in Settings at any time.")
+            Text("Your entries are stored locally first. You control Health sync in Settings at any time.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -751,7 +766,7 @@ private struct QuickStartOnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sync preferences")
                 .font(.title3.weight(.semibold))
-            Toggle("Enable CloudKit sync", isOn: $useCloudKitSync)
+            Toggle("Enable Health sync", isOn: $useHealthSync)
             Toggle("Enable reminders", isOn: $enableReminders)
             Text("You can change these any time later.")
                 .font(.caption)

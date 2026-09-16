@@ -10,7 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     let profile: UserProfile
     @Binding var hasCompletedQuickStart: Bool
-    @Binding var useCloudKitSync: Bool
+    @Binding var useHealthSync: Bool
     @Binding var enableReminders: Bool
     @Binding var includeActiveCaloriesInMax: Bool
     let onOpenQuickStart: () -> Void
@@ -78,7 +78,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Privacy & Sync") {
-                Toggle("Enable CloudKit sync", isOn: $useCloudKitSync)
+                Toggle("Enable Health sync", isOn: $useHealthSync)
                 Toggle("Enable reminders", isOn: $enableReminders)
                 Button("Request HealthKit Access") {
                     Task { await onRequestHealthKit() }
