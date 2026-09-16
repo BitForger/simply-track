@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Binding var hasCompletedQuickStart: Bool
     @Binding var useCloudKitSync: Bool
     @Binding var enableReminders: Bool
+    @Binding var includeActiveCaloriesInMax: Bool
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
 
@@ -63,6 +64,15 @@ struct SettingsView: View {
             get: { weeklyTargetInput },
             set: { weeklyTargetInput = sanitizeTargetInput($0) }
         )
+    }
+
+    private var burnAdjustmentMultiplier: Double {
+        profile.nutritionGoal == .loseWeight ? 0.8 : 1.0
+    }
+
+    private var burnAdjustmentSummary: String {
+        let percent = Int((burnAdjustmentMultiplier * 100).rounded())
+        return "Adjusted max = base target + \(percent)% of active calories burned (today/week so far)."
     }
 
     var body: some View {
@@ -197,6 +207,12 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Targets") {
+                Toggle("Adjust max with active calories burned", isOn: $includeActiveCaloriesInMax)
+
+                Text(burnAdjustmentSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Picker(
                     "Goal",
                     selection: Binding(

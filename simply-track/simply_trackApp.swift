@@ -10,20 +10,37 @@ import SwiftData
 
 @main
 struct simply_trackApp: App {
+    private static let appSupportURL = URL.applicationSupportDirectory
+
+    private static func ensureAppSupportDirectoryExists() {
+        do {
+            try FileManager.default.createDirectory(
+                at: appSupportURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            // Keep startup resilient; container setup has its own recovery fallback.
+            print("Warning: Could not ensure Application Support directory: \(error)")
+        }
+    }
+
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            FoodEntry.self,
-            FoodCatalogItem.self,
-            UserProfile.self,
-        ])
+        print("DEBUG: Initializing SimplyTrack app with SwiftData")
+        ensureAppSupportDirectoryExists()
+        let schema = Schema(SimplyTrackSchemaV2.models)
 
         let persistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [persistentConfiguration])
+            return try ModelContainer(
+                for: schema,
+                migrationPlan: SimplyTrackMigrationPlan.self,
+                configurations: [persistentConfiguration]
+            )
         } catch {
             // Recovery path for incompatible/corrupted stores after schema changes.
-            let appSupport = URL.applicationSupportDirectory
+            ensureAppSupportDirectoryExists()
+            let appSupport = appSupportURL
             let candidateStoreFiles = [
                 appSupport.appending(path: "default.store"),
                 appSupport.appending(path: "default.store-shm"),
@@ -34,11 +51,19 @@ struct simply_trackApp: App {
             }
 
             do {
-                return try ModelContainer(for: schema, configurations: [persistentConfiguration])
+                return try ModelContainer(
+                    for: schema,
+                    migrationPlan: SimplyTrackMigrationPlan.self,
+                    configurations: [persistentConfiguration]
+                )
             } catch {
                 let inMemoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
                 do {
-                    return try ModelContainer(for: schema, configurations: [inMemoryConfiguration])
+                    return try ModelContainer(
+                        for: schema,
+                        migrationPlan: SimplyTrackMigrationPlan.self,
+                        configurations: [inMemoryConfiguration]
+                    )
                 } catch {
                     preconditionFailure("Could not create ModelContainer after recovery attempts: \(error)")
                 }

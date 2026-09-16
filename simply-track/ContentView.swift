@@ -21,12 +21,16 @@ struct ContentView: View {
 
     @State private var showingAddEntrySheet = false
     @State private var showingQuickStartSheet = false
+    @State private var dailyActiveCaloriesBurned: Double = 0
+    @State private var weeklyActiveCaloriesBurned: Double = 0
+    @State private var activeCaloriesFallbackMessage: String = ""
     @StateObject private var syncCoordinator = HealthKitSyncCoordinator()
     private let reminderManager = ReminderManager()
 
     @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
     @AppStorage("useCloudKitSync") private var useCloudKitSync = true
     @AppStorage("enableReminders") private var enableReminders = false
+    @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
 
     var body: some View {
         TabView {
@@ -34,6 +38,10 @@ struct ContentView: View {
                 HomeDashboardView(
                     entries: entries,
                     profile: activeProfile,
+                    includeActiveCaloriesInMax: includeActiveCaloriesInMax,
+                    dailyActiveCaloriesBurned: dailyActiveCaloriesBurned,
+                    weeklyActiveCaloriesBurned: weeklyActiveCaloriesBurned,
+                    activeCaloriesFallbackMessage: activeCaloriesFallbackMessage,
                     syncMessage: syncCoordinator.syncMessage,
                     hasCompletedQuickStart: hasCompletedQuickStart,
                     onOpenQuickStart: { showingQuickStartSheet = true }
@@ -60,6 +68,7 @@ struct ContentView: View {
                     hasCompletedQuickStart: $hasCompletedQuickStart,
                     useCloudKitSync: $useCloudKitSync,
                     enableReminders: $enableReminders,
+                    includeActiveCaloriesInMax: $includeActiveCaloriesInMax,
                     onOpenQuickStart: { showingQuickStartSheet = true },
                     onRequestHealthKit: {
                         await authorizeAndSyncHealthKit()
@@ -181,36 +190,57 @@ struct ContentView: View {
         let startDate = Calendar.current.startOfDay(for: .now)
         let payloads = await syncCoordinator.pullLatestEntries(from: startDate, to: .now)
 
-        guard !payloads.isEmpty else { return }
-
-        for payload in payloads {
-            if let match = entries.first(where: {
-                $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier || $0.id == payload.id
-            }) {
-                if payload.updatedAt >= match.updatedAt {
-                    match.foodName = payload.foodName
-                    match.amountDescription = payload.amountDescription
-                    match.calories = payload.calories
-                    match.consumedAt = payload.consumedAt
-                    match.updatedAt = payload.updatedAt
-                    match.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
-                    match.source = "healthKit"
-                }
-            } else {
-                modelContext.insert(
-                    FoodEntry(
-                        id: payload.id,
-                        foodName: payload.foodName,
-                        amountDescription: payload.amountDescription,
-                        calories: payload.calories,
-                        consumedAt: payload.consumedAt,
-                        updatedAt: payload.updatedAt,
-                        source: "healthKit",
-                        healthKitSampleIdentifier: payload.healthKitSampleIdentifier
+        if !payloads.isEmpty {
+            for payload in payloads {
+                if let match = entries.first(where: {
+                    $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier || $0.id == payload.id
+                }) {
+                    if payload.updatedAt >= match.updatedAt {
+                        match.foodName = payload.foodName
+                        match.amountDescription = payload.amountDescription
+                        match.calories = payload.calories
+                        match.consumedAt = payload.consumedAt
+                        match.updatedAt = payload.updatedAt
+                        match.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
+                        match.source = "healthKit"
+                    }
+                } else {
+                    modelContext.insert(
+                        FoodEntry(
+                            id: payload.id,
+                            foodName: payload.foodName,
+                            amountDescription: payload.amountDescription,
+                            calories: payload.calories,
+                            consumedAt: payload.consumedAt,
+                            updatedAt: payload.updatedAt,
+                            source: "healthKit",
+                            healthKitSampleIdentifier: payload.healthKitSampleIdentifier
+                        )
                     )
-                )
+                }
             }
         }
+
+        await refreshActiveCaloriesBurned()
+    }
+
+    private func refreshActiveCaloriesBurned() async {
+        let now = Date.now
+        let dailyStart = Calendar.current.startOfDay(for: now)
+        let weekRange = CalorieSummaryCalculator.weekRange(for: now)
+
+        async let dailyBurn = syncCoordinator.pullActiveCaloriesBurned(from: dailyStart, to: now)
+        async let weeklyBurn = syncCoordinator.pullActiveCaloriesBurned(from: weekRange.start, to: now)
+
+        let dailyResult = await dailyBurn
+        let weeklyResult = await weeklyBurn
+
+        dailyActiveCaloriesBurned = dailyResult.calories
+        weeklyActiveCaloriesBurned = weeklyResult.calories
+
+        let fallbackNotes = [dailyResult.fallbackNote, weeklyResult.fallbackNote]
+            .compactMap { $0 }
+        activeCaloriesFallbackMessage = fallbackNotes.first ?? ""
     }
 
     private func syncAllEntriesWithHealthKit() async {
@@ -276,13 +306,13 @@ struct ContentView: View {
 private struct HomeDashboardView: View {
     let entries: [FoodEntry]
     let profile: UserProfile
+    let includeActiveCaloriesInMax: Bool
+    let dailyActiveCaloriesBurned: Double
+    let weeklyActiveCaloriesBurned: Double
+    let activeCaloriesFallbackMessage: String
     let syncMessage: String
     let hasCompletedQuickStart: Bool
     let onOpenQuickStart: () -> Void
-
-    private var selectedTargetMode: TargetMode {
-        profile.selectedTargetMode
-    }
 
     private var todayCalories: Double {
         CalorieSummaryCalculator.dailyTotal(from: entries, on: .now)
@@ -292,15 +322,32 @@ private struct HomeDashboardView: View {
         CalorieSummaryCalculator.weeklyTotal(from: entries, around: .now)
     }
 
+    private var burnAdjustmentMultiplier: Double {
+        profile.nutritionGoal == .loseWeight ? 0.8 : 1.0
+    }
+
+    private var baseDailyTarget: Double {
+        profile.dailyCalorieTarget
+    }
+
+    private var baseWeeklyTarget: Double {
+        profile.weeklyCalorieTarget
+    }
+
+    private var adjustedDailyBonus: Double {
+        includeActiveCaloriesInMax ? (dailyActiveCaloriesBurned * burnAdjustmentMultiplier) : 0
+    }
+
+    private var adjustedWeeklyBonus: Double {
+        includeActiveCaloriesInMax ? (weeklyActiveCaloriesBurned * burnAdjustmentMultiplier) : 0
+    }
+
     private var dailyTarget: Double {
-        selectedTargetMode == .dynamic ? profile.recommendedDailyTarget() : profile.dailyCalorieTarget
+        baseDailyTarget + adjustedDailyBonus
     }
 
     private var weeklyTarget: Double {
-        if selectedTargetMode == .dynamic {
-            return profile.recommendedWeeklyTarget()
-        }
-        return profile.weeklyCalorieTarget
+        baseWeeklyTarget + adjustedWeeklyBonus
     }
 
     private var weekLoggedDays: Int {
@@ -337,7 +384,6 @@ private struct HomeDashboardView: View {
             }
 
             Section("Targets") {
-                targetModePicker
                 metabolismCard
             }
 
@@ -359,6 +405,11 @@ private struct HomeDashboardView: View {
                 .font(.title3.weight(.semibold))
             ProgressView(value: progress)
                 .tint(.green)
+            if includeActiveCaloriesInMax {
+                Text("Base \(Int(baseDailyTarget)) + bonus \(Int(adjustedDailyBonus.rounded())) (\(Int((burnAdjustmentMultiplier * 100).rounded()))% of \(Int(dailyActiveCaloriesBurned.rounded())) burned)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text("Daily progress")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -376,6 +427,11 @@ private struct HomeDashboardView: View {
                 .font(.title3.weight(.semibold))
             ProgressView(value: progress)
                 .tint(.blue)
+            if includeActiveCaloriesInMax {
+                Text("Base \(Int(baseWeeklyTarget)) + bonus \(Int(adjustedWeeklyBonus.rounded())) (\(Int((burnAdjustmentMultiplier * 100).rounded()))% of \(Int(weeklyActiveCaloriesBurned.rounded())) burned this week)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text("Week \(weekRange.start, format: .dateTime.month().day()) - \(weekRange.end.addingTimeInterval(-1), format: .dateTime.month().day())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -398,28 +454,25 @@ private struct HomeDashboardView: View {
         }
     }
 
-    private var targetModePicker: some View {
-        Picker(
-            "Target Mode",
-            selection: Binding(
-                get: { profile.selectedTargetMode },
-                set: { profile.selectedTargetMode = $0 }
-            )
-        ) {
-            ForEach(TargetMode.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
-
     private var metabolismCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Estimated BMR: \(Int(profile.estimatedBMR())) cal/day")
             Text("Estimated TDEE: \(Int(profile.estimatedTDEE())) cal/day")
-            Text("Dynamic mode uses your goal and activity level to drive daily and weekly targets.")
+            Group {
+                if includeActiveCaloriesInMax {
+                    Text("Adjusted max uses base + \(Int((burnAdjustmentMultiplier * 100).rounded()))% of active calories burned so far.")
+                } else {
+                    Text("Adjusted max is off. Daily/weekly max uses your base targets only.")
+                }
+            }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if includeActiveCaloriesInMax && !activeCaloriesFallbackMessage.isEmpty {
+                Text(activeCaloriesFallbackMessage)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 
@@ -743,6 +796,11 @@ private struct CalorieEntryPayload: Hashable {
     }
 }
 
+private struct ActiveCaloriesReadResult {
+    let calories: Double
+    let fallbackNote: String?
+}
+
 @MainActor
 private final class HealthKitSyncCoordinator: ObservableObject {
     @Published var syncMessage = ""
@@ -784,6 +842,17 @@ private final class HealthKitSyncCoordinator: ObservableObject {
             return localEntries
         }
     }
+
+    func pullActiveCaloriesBurned(from startDate: Date, to endDate: Date) async -> ActiveCaloriesReadResult {
+        do {
+            let calories = try await healthKitService.fetchActiveCaloriesBurned(from: startDate, to: endDate)
+            return ActiveCaloriesReadResult(calories: calories, fallbackNote: nil)
+        } catch {
+            let note = "Active calories unavailable right now. Using base targets only until Health data is available."
+            syncMessage = "HealthKit active calories read failed: \(error.localizedDescription)"
+            return ActiveCaloriesReadResult(calories: 0, fallbackNote: note)
+        }
+    }
 }
 
 private actor ReminderManager {
@@ -819,6 +888,7 @@ private final class HealthKitService {
 #if canImport(HealthKit)
     private let store = HKHealthStore()
     private let dietaryType = HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
+    private let activeEnergyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
 #endif
 
     enum ServiceError: LocalizedError {
@@ -842,7 +912,7 @@ private final class HealthKitService {
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            store.requestAuthorization(toShare: [dietaryType], read: [dietaryType]) { granted, error in
+            store.requestAuthorization(toShare: [dietaryType], read: [dietaryType, activeEnergyType]) { granted, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else if granted {
@@ -851,6 +921,30 @@ private final class HealthKitService {
                     continuation.resume(throwing: ServiceError.authorizationUnavailable)
                 }
             }
+        }
+#else
+        throw ServiceError.unsupported
+#endif
+    }
+
+    func fetchActiveCaloriesBurned(from startDate: Date, to endDate: Date) async throws -> Double {
+#if canImport(HealthKit)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Double, Error>) in
+            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+            let query = HKStatisticsQuery(
+                quantityType: activeEnergyType,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum
+            ) { _, result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let calories = result?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                continuation.resume(returning: calories)
+            }
+            store.execute(query)
         }
 #else
         throw ServiceError.unsupported
