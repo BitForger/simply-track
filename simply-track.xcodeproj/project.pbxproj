@@ -6,9 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		842CAD6F305B5ADC00740400 /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = 842CAD6E305B5ADC00740400 /* AGENTS.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		842CAD3B305A2B4600740400 /* simply-track.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "simply-track.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		842CAD53305A320500740400 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		842CAD6E305B5ADC00740400 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -46,6 +51,7 @@
 		8490351130411B95009B4195 = {
 			isa = PBXGroup;
 			children = (
+				842CAD6E305B5ADC00740400 /* AGENTS.md */,
 				842CAD53305A320500740400 /* README.md */,
 				842CAD30305A2AE800740400 /* simply-track */,
 				8490351B30411B95009B4195 /* Products */,
@@ -124,6 +130,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				842CAD6F305B5ADC00740400 /* AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

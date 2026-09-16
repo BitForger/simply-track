@@ -19,7 +19,7 @@ struct simply_trackApp: App {
                 withIntermediateDirectories: true
             )
         } catch {
-            // Keep startup resilient; container setup has its own recovery fallback.
+            // Keep startup resilient; persistent store setup handles failure explicitly.
             print("Warning: Could not ensure Application Support directory: \(error)")
         }
     }
@@ -57,16 +57,7 @@ struct simply_trackApp: App {
                     configurations: [persistentConfiguration]
                 )
             } catch {
-                let inMemoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-                do {
-                    return try ModelContainer(
-                        for: schema,
-                        migrationPlan: SimplyTrackMigrationPlan.self,
-                        configurations: [inMemoryConfiguration]
-                    )
-                } catch {
-                    preconditionFailure("Could not create ModelContainer after recovery attempts: \(error)")
-                }
+                preconditionFailure("Could not create persistent ModelContainer after recovery attempts: \(error)")
             }
         }
     }()
