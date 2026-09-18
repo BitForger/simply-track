@@ -1,8 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
-if [[ -d "$CI_APP_STORE_SIGNED_APP_PATH" ]]; then
-  TESTFLIGHT_DIR_PATH=../TestFlight
-  mkdir -p $TESTFLIGHT_DIR_PATH
-  git fetch --deepen 5
-  git log -5 --pretty=format:"%s" >! $TESTFLIGHT_DIR_PATH/WhatToTest.en-US.txt
-fi   
+
+TESTFLIGHT_DIR_PATH=../TestFlight
+mkdir -p $TESTFLIGHT_DIR_PATH
+git fetch --deepen 5
+git log -5 --pretty=format:"%s" >! $TESTFLIGHT_DIR_PATH/WhatToTest.en-US.txtfi   
