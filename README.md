@@ -68,6 +68,10 @@ See **AGENTS.md** for detailed documentation of:
 - Schema versioning (V1 to V2) and migration strategy
 - Error handling and recovery paths
 
+## Support
+
+If Simply Track is useful to you, you can support its development on [Ko-fi](https://ko-fi.com/bitforger).
+
 ## License
 
-No license has been added yet. Add one here if you plan to share the project publicly.
+Simply Track is licensed under the [GNU General Public License v3.0](LICENSE).
