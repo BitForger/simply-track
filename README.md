@@ -75,3 +75,7 @@ If Simply Track is useful to you, you can support its development on [Ko-fi](htt
 ## License
 
 Simply Track is licensed under the [GNU General Public License v3.0](LICENSE).
+
+## Privacy
+
+Read the [Privacy Policy](PRIVACY.md) to learn how Simply Track handles app and HealthKit data.
