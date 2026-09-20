@@ -30,6 +30,7 @@ struct ContentView: View {
     @AppStorage("useHealthSync") private var useHealthSync = true
     @AppStorage("enableReminders") private var enableReminders = false
     @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
+    @AppStorage("autoSaveToCatalog") private var autoSaveToCatalog = true
 
     var body: some View {
         TabView {
@@ -73,7 +74,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAddEntrySheet) {
-            AddFoodEntrySheet(foodCatalog: foodCatalog) { payload in
+            AddFoodEntrySheet(foodCatalog: foodCatalog, initialSaveToCatalog: autoSaveToCatalog) { payload in
                 addEntry(payload)
             }
         }
@@ -165,11 +166,33 @@ struct ContentView: View {
             modelContext.insert(entry)
         }
 
+        if payload.saveToCatalog {
+            upsertPersonalCatalogItem(
+                name: payload.foodName,
+                amount: payload.amountDescription,
+                calories: payload.calories
+            )
+        }
+
         let localSnapshots = deduplicatedSnapshots(entries.map(CalorieEntryPayload.init) + [CalorieEntryPayload(entry)])
 
         Task {
             await syncEntriesWithHealthKit(localSnapshots)
         }
+    }
+
+    private func upsertPersonalCatalogItem(name: String, amount: String, calories: Double) {
+        let alreadyExists = foodCatalog.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        guard !alreadyExists else { return }
+
+        modelContext.insert(
+            FoodCatalogItem(
+                name: name,
+                defaultAmountDescription: amount,
+                caloriesPerDefaultAmount: calories,
+                isUserAdded: true
+            )
+        )
     }
 
     private func deleteEntries(offsets: IndexSet) {
@@ -194,7 +217,8 @@ struct ContentView: View {
                     FoodCatalogItem(
                         name: $0.name,
                         defaultAmountDescription: $0.amount,
-                        caloriesPerDefaultAmount: $0.calories
+                        caloriesPerDefaultAmount: $0.calories,
+                        isUserAdded: false
                     )
                 )
             }
@@ -589,12 +613,14 @@ private struct AddFoodEntryPayload {
     let amountDescription: String
     let calories: Double
     let consumedAt: Date
+    let saveToCatalog: Bool
 }
 
 private struct AddFoodEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let foodCatalog: [FoodCatalogItem]
+    let initialSaveToCatalog: Bool
     let onSave: (AddFoodEntryPayload) -> Void
 
     @State private var selectedCatalogID: UUID?
@@ -602,6 +628,22 @@ private struct AddFoodEntrySheet: View {
     @State private var amountDescription = ""
     @State private var caloriesText = ""
     @State private var consumedAt = Date()
+    @State private var saveToCatalog: Bool
+
+    init(foodCatalog: [FoodCatalogItem], initialSaveToCatalog: Bool, onSave: @escaping (AddFoodEntryPayload) -> Void) {
+        self.foodCatalog = foodCatalog
+        self.initialSaveToCatalog = initialSaveToCatalog
+        self.onSave = onSave
+        _saveToCatalog = State(initialValue: initialSaveToCatalog)
+    }
+
+    private var suggestedCatalog: [FoodCatalogItem] {
+        foodCatalog.filter { !$0.isUserAdded }.sorted { $0.name < $1.name }
+    }
+
+    private var personalCatalog: [FoodCatalogItem] {
+        foodCatalog.filter { $0.isUserAdded }.sorted { $0.name < $1.name }
+    }
 
     var body: some View {
         NavigationStack {
@@ -609,8 +651,19 @@ private struct AddFoodEntrySheet: View {
                 if !foodCatalog.isEmpty {
                     Picker("Quick pick", selection: $selectedCatalogID) {
                         Text("None").tag(UUID?.none)
-                        ForEach(foodCatalog) { item in
-                            Text(item.name).tag(UUID?.some(item.id))
+                        if !suggestedCatalog.isEmpty {
+                            Section("Suggested") {
+                                ForEach(suggestedCatalog) { item in
+                                    Text(item.name).tag(UUID?.some(item.id))
+                                }
+                            }
+                        }
+                        if !personalCatalog.isEmpty {
+                            Section("Your Foods") {
+                                ForEach(personalCatalog) { item in
+                                    Text(item.name).tag(UUID?.some(item.id))
+                                }
+                            }
                         }
                     }
                     .onChange(of: selectedCatalogID) { _, newValue in
@@ -628,6 +681,8 @@ private struct AddFoodEntrySheet: View {
                     .keyboardType(.decimalPad)
 #endif
                 DatePicker("Time", selection: $consumedAt)
+
+                Toggle("Save to Quick Pick", isOn: $saveToCatalog)
             }
             .navigationTitle("Manual Entry")
             .toolbar {
@@ -657,7 +712,8 @@ private struct AddFoodEntrySheet: View {
                 foodName: foodName.trimmingCharacters(in: .whitespacesAndNewlines),
                 amountDescription: amountDescription.trimmingCharacters(in: .whitespacesAndNewlines),
                 calories: calories,
-                consumedAt: consumedAt
+                consumedAt: consumedAt,
+                saveToCatalog: saveToCatalog
             )
         )
         dismiss()

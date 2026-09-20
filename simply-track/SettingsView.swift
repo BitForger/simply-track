@@ -15,11 +15,15 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
     @Query private var profiles: [UserProfile]
+    @Query(sort: \FoodCatalogItem.name) private var foodCatalog: [FoodCatalogItem]
+    @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
 
     @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
     @AppStorage("useHealthSync") private var useHealthSync = true
     @AppStorage("enableReminders") private var enableReminders = false
     @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
+    @AppStorage("autoSaveToCatalog") private var autoSaveToCatalog = true
+    @State private var showingHealthImportSheet = false
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
 
@@ -90,6 +94,30 @@ struct SettingsView: View {
     private var burnAdjustmentSummary: String {
         let percent = Int((burnAdjustmentMultiplier * 100).rounded())
         return "Adjusted max = base target + \(percent)% of active calories burned (today/week so far)."
+    }
+
+    private var personalCatalog: [FoodCatalogItem] {
+        foodCatalog.filter { $0.isUserAdded }
+    }
+
+    private var healthImportCandidates: [HealthImportCandidate] {
+        let healthKitEntries = entries.filter { $0.source == "healthKit" }
+        var latestByName: [String: FoodEntry] = [:]
+
+        for entry in healthKitEntries {
+            let key = entry.foodName.lowercased()
+            if let existing = latestByName[key], existing.consumedAt >= entry.consumedAt {
+                continue
+            }
+            latestByName[key] = entry
+        }
+
+        return latestByName.values
+            .filter { entry in
+                !foodCatalog.contains { $0.name.caseInsensitiveCompare(entry.foodName) == .orderedSame }
+            }
+            .map { HealthImportCandidate(name: $0.foodName, amountDescription: $0.amountDescription, calories: $0.calories) }
+            .sorted { $0.name < $1.name }
     }
 
     var body: some View {
@@ -305,10 +333,47 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Personal Foods") {
+                Toggle("Auto-save manual entries", isOn: $autoSaveToCatalog)
+                Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Import Foods from Health") {
+                    showingHealthImportSheet = true
+                }
+                .disabled(healthImportCandidates.isEmpty)
+
+                if personalCatalog.isEmpty {
+                    Text("No personal foods yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(personalCatalog) { item in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(item.name)
+                                Text(item.defaultAmountDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(Int(item.caloriesPerDefaultAmount)) cal")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete(perform: deletePersonalCatalogItems)
+                }
+            }
+
             Button("Support the developer", systemImage: "heart") {
                 if let url = URL(string: "https://ko-fi.com/bitforger") {
                     openURL(url)
                 }
+            }
+        }
+        .sheet(isPresented: $showingHealthImportSheet) {
+            HealthKitCatalogImportSheet(candidates: healthImportCandidates) { selected in
+                importCatalogItems(selected)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isAgeExpanded)
@@ -409,6 +474,26 @@ struct SettingsView: View {
         }
     }
 
+    private func deletePersonalCatalogItems(offsets: IndexSet) {
+        let idsToDelete = offsets.map { personalCatalog[$0].id }
+        for item in foodCatalog where idsToDelete.contains(item.id) {
+            modelContext.delete(item)
+        }
+    }
+
+    private func importCatalogItems(_ candidates: [HealthImportCandidate]) {
+        for candidate in candidates {
+            modelContext.insert(
+                FoodCatalogItem(
+                    name: candidate.name,
+                    defaultAmountDescription: candidate.amountDescription,
+                    caloriesPerDefaultAmount: candidate.calories,
+                    isUserAdded: true
+                )
+            )
+        }
+    }
+
     private func sanitizeTargetInput(_ input: String) -> String {
         input.filter(\.isNumber)
     }
@@ -435,4 +520,72 @@ struct SettingsView: View {
         )
     }
     .modelContainer(for: [UserProfile.self], inMemory: true)
+}
+
+private struct HealthImportCandidate: Identifiable {
+    var id: String { name.lowercased() }
+    let name: String
+    let amountDescription: String
+    let calories: Double
+}
+
+private struct HealthKitCatalogImportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let candidates: [HealthImportCandidate]
+    let onImport: ([HealthImportCandidate]) -> Void
+
+    @State private var selectedIDs: Set<String> = []
+
+    var body: some View {
+        NavigationStack {
+            List(candidates) { candidate in
+                Button {
+                    toggleSelection(candidate)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(candidate.name)
+                            Text(candidate.amountDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(Int(candidate.calories)) cal")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: selectedIDs.contains(candidate.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(selectedIDs.contains(candidate.id) ? .blue : .secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .overlay {
+                if candidates.isEmpty {
+                    Text("No new foods found from Health history.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Import from Health")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        onImport(candidates.filter { selectedIDs.contains($0.id) })
+                        dismiss()
+                    }
+                    .disabled(selectedIDs.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func toggleSelection(_ candidate: HealthImportCandidate) {
+        if selectedIDs.contains(candidate.id) {
+            selectedIDs.remove(candidate.id)
+        } else {
+            selectedIDs.insert(candidate.id)
+        }
+    }
 }

@@ -27,7 +27,7 @@ struct simply_trackApp: App {
     var sharedModelContainer: ModelContainer = {
         print("DEBUG: Initializing SimplyTrack app with SwiftData")
         ensureAppSupportDirectoryExists()
-        let schema = Schema(SimplyTrackSchemaV2.models)
+        let schema = Schema(SimplyTrackSchemaV3.models)
 
         let persistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
