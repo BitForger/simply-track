@@ -17,7 +17,6 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
     @Query(sort: \FoodCatalogItem.name) private var foodCatalog: [FoodCatalogItem]
-    @Query private var profiles: [UserProfile]
 
     @State private var showingAddEntrySheet = false
     @State private var showingQuickStartSheet = false
@@ -37,7 +36,6 @@ struct ContentView: View {
             NavigationViewWrapper {
                 HomeDashboardView(
                     entries: entries,
-                    profile: activeProfile,
                     includeActiveCaloriesInMax: includeActiveCaloriesInMax,
                     dailyActiveCaloriesBurned: dailyActiveCaloriesBurned,
                     weeklyActiveCaloriesBurned: weeklyActiveCaloriesBurned,
@@ -64,11 +62,6 @@ struct ContentView: View {
 
             NavigationViewWrapper {
                 SettingsView(
-                    profile: activeProfile,
-                    hasCompletedQuickStart: $hasCompletedQuickStart,
-                    useHealthSync: $useHealthSync,
-                    enableReminders: $enableReminders,
-                    includeActiveCaloriesInMax: $includeActiveCaloriesInMax,
                     onOpenQuickStart: { showingQuickStartSheet = true },
                     onRequestHealthKit: {
                         await authorizeAndSyncHealthKit()
@@ -90,11 +83,31 @@ struct ContentView: View {
         .task {
             migrateLegacyHealthSyncPreferenceIfNeeded()
             bootstrapIfNeeded()
-            await refreshFromHealthKit()
+            await refreshHealthDataForCurrentPreferences()
         }
         .onChange(of: enableReminders) { _, enabled in
             Task {
                 await updateReminderSchedule(enabled: enabled)
+            }
+        }
+        .onChange(of: useHealthSync) { _, enabled in
+            Task {
+                if enabled {
+                    await refreshHealthDataForCurrentPreferences()
+                } else {
+                    clearActiveCaloriesState()
+                }
+            }
+        }
+        .onChange(of: includeActiveCaloriesInMax) { _, enabled in
+            guard enabled else {
+                clearActiveCaloriesState()
+                return
+            }
+
+            Task {
+                guard useHealthSync else { return }
+                await refreshActiveCaloriesBurned()
             }
         }
     }
@@ -113,16 +126,6 @@ struct ContentView: View {
         useHealthSync = legacyValue
     }
 
-    private var activeProfile: UserProfile {
-        if let existing = profiles.first {
-            return existing
-        }
-
-        let profile = UserProfile()
-        modelContext.insert(profile)
-        return profile
-    }
-
     private var quickStartSheet: some View {
         QuickStartOnboardingView(
             useHealthSync: $useHealthSync,
@@ -138,6 +141,11 @@ struct ContentView: View {
     }
 
     private func authorizeAndSyncHealthKit() async {
+        guard useHealthSync else {
+            syncCoordinator.syncMessage = "Enable Health sync in Settings before requesting HealthKit access."
+            return
+        }
+
         await syncCoordinator.requestAuthorization()
         await refreshFromHealthKit()
         await syncAllEntriesWithHealthKit()
@@ -180,10 +188,6 @@ struct ContentView: View {
     }
 
     private func bootstrapIfNeeded() {
-        if profiles.isEmpty {
-            modelContext.insert(UserProfile())
-        }
-
         if foodCatalog.isEmpty {
             FoodCatalogSeed.defaults.forEach {
                 modelContext.insert(
@@ -202,6 +206,11 @@ struct ContentView: View {
     }
 
     private func refreshFromHealthKit() async {
+        guard useHealthSync else {
+            clearActiveCaloriesState()
+            return
+        }
+
         let startDate = Calendar.current.startOfDay(for: .now)
         let payloads = await syncCoordinator.pullLatestEntries(from: startDate, to: .now)
 
@@ -236,10 +245,19 @@ struct ContentView: View {
             }
         }
 
-        await refreshActiveCaloriesBurned()
+        if includeActiveCaloriesInMax {
+            await refreshActiveCaloriesBurned()
+        } else {
+            clearActiveCaloriesState()
+        }
     }
 
     private func refreshActiveCaloriesBurned() async {
+        guard useHealthSync, includeActiveCaloriesInMax else {
+            clearActiveCaloriesState()
+            return
+        }
+
         let now = Date.now
         let dailyStart = Calendar.current.startOfDay(for: now)
         let weekRange = CalorieSummaryCalculator.weekRange(for: now)
@@ -259,10 +277,12 @@ struct ContentView: View {
     }
 
     private func syncAllEntriesWithHealthKit() async {
+        guard useHealthSync else { return }
         await syncEntriesWithHealthKit(entries.map(CalorieEntryPayload.init))
     }
 
     private func syncEntriesWithHealthKit(_ snapshots: [CalorieEntryPayload]) async {
+        guard useHealthSync else { return }
         let mergedPayloads = await syncCoordinator.sync(localEntries: snapshots)
 
         for payload in mergedPayloads {
@@ -305,6 +325,21 @@ struct ContentView: View {
         return Array(byID.values)
     }
 
+    private func refreshHealthDataForCurrentPreferences() async {
+        guard useHealthSync else {
+            clearActiveCaloriesState()
+            return
+        }
+
+        await refreshFromHealthKit()
+    }
+
+    private func clearActiveCaloriesState() {
+        dailyActiveCaloriesBurned = 0
+        weeklyActiveCaloriesBurned = 0
+        activeCaloriesFallbackMessage = ""
+    }
+
     private func updateReminderSchedule(enabled: Bool) async {
         do {
             if enabled {
@@ -319,8 +354,10 @@ struct ContentView: View {
 }
 
 private struct HomeDashboardView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var profiles: [UserProfile]
+
     let entries: [FoodEntry]
-    let profile: UserProfile
     let includeActiveCaloriesInMax: Bool
     let dailyActiveCaloriesBurned: Double
     let weeklyActiveCaloriesBurned: Double
@@ -328,6 +365,16 @@ private struct HomeDashboardView: View {
     let syncMessage: String
     let hasCompletedQuickStart: Bool
     let onOpenQuickStart: () -> Void
+
+    private var profile: UserProfile {
+        if let existing = profiles.first {
+            return existing
+        }
+
+        let fallbackProfile = UserProfile()
+        modelContext.insert(fallbackProfile)
+        return fallbackProfile
+    }
 
     private var todayCalories: Double {
         CalorieSummaryCalculator.dailyTotal(from: entries, on: .now)

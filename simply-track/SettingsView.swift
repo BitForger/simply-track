@@ -6,15 +6,32 @@
 //
 
 import SwiftUI
+import SwiftData
+#if canImport(WebKit)
+import WebKit
+#endif
 
 struct SettingsView: View {
-    let profile: UserProfile
-    @Binding var hasCompletedQuickStart: Bool
-    @Binding var useHealthSync: Bool
-    @Binding var enableReminders: Bool
-    @Binding var includeActiveCaloriesInMax: Bool
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
+    @Query private var profiles: [UserProfile]
+
+    @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
+    @AppStorage("useHealthSync") private var useHealthSync = true
+    @AppStorage("enableReminders") private var enableReminders = false
+    @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
+
+    private var profile: UserProfile {
+        if let existing = profiles.first {
+            return existing
+        }
+
+        let fallbackProfile = UserProfile()
+        modelContext.insert(fallbackProfile)
+        return fallbackProfile
+    }
 
     @State private var isAgeExpanded = false
     @State private var isHeightExpanded = false
@@ -82,6 +99,13 @@ struct SettingsView: View {
                 Toggle("Enable reminders", isOn: $enableReminders)
                 Button("Request HealthKit Access") {
                     Task { await onRequestHealthKit() }
+                }
+                .disabled(!useHealthSync)
+
+                if !useHealthSync {
+                    Text("Turn on Health sync to request and use HealthKit access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -281,7 +305,11 @@ struct SettingsView: View {
                 }
             }
 
-            
+            Button("Support the developer", systemImage: "heart") {
+                if let url = URL(string: "https://ko-fi.com/bitforger") {
+                    openURL(url)
+                }
+            }
         }
         .animation(.easeInOut(duration: 0.2), value: isAgeExpanded)
         .animation(.easeInOut(duration: 0.2), value: isHeightExpanded)
@@ -322,6 +350,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        
     }
 
     private enum ExpandedPickerField {
@@ -396,4 +425,14 @@ struct SettingsView: View {
         formatter.maximumFractionDigits = 0
         return formatter
     }()
+}
+
+#Preview {
+    NavigationStack {
+        SettingsView(
+            onOpenQuickStart: {},
+            onRequestHealthKit: {}
+        )
+    }
+    .modelContainer(for: [UserProfile.self], inMemory: true)
 }
