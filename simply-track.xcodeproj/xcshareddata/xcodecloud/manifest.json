@@ -3,6 +3,10 @@
   "targets" : [
     {
       "id" : "DEE72927-294D-4C81-BBA7-1756BE1CFEC7",
+      "name" : "my-calories"
+    },
+    {
+      "id" : "DEE72927-294D-4C81-BBA7-1756BE1CFEC7",
       "name" : "simply-track"
     }
   ]
