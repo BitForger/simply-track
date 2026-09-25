@@ -54,7 +54,8 @@ struct ContentView: View {
                 LogEntriesView(
                     entries: entries,
                     onAddEntry: { showingAddEntrySheet = true },
-                    onDeleteEntries: deleteEntries
+                    onDeleteEntries: deleteEntries,
+                    onEditEntry: updateEntry
                 )
             }
             .tabItem {
@@ -207,6 +208,19 @@ struct ContentView: View {
         Task {
             await syncCoordinator.deleteEntriesFromHealthKit(removedEntries.map(CalorieEntryPayload.init))
             await syncAllEntriesWithHealthKit()
+        }
+    }
+
+    @MainActor private func updateEntry(_ entry: FoodEntry, with values: EditableFoodEntryValues) {
+        entry.foodName = values.foodName
+        entry.amountDescription = values.amountDescription
+        entry.calories = values.calories
+        entry.consumedAt = values.consumedAt
+        entry.updatedAt = .now
+
+        let snapshots = deduplicatedSnapshots(entries.map(CalorieEntryPayload.init))
+        Task {
+            await syncEntriesWithHealthKit(snapshots)
         }
     }
 
