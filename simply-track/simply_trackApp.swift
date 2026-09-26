@@ -27,7 +27,13 @@ struct simply_trackApp: App {
     var sharedModelContainer: ModelContainer = {
         print("DEBUG: Initializing SimplyTrack app with SwiftData")
         ensureAppSupportDirectoryExists()
-        let schema = Schema(SimplyTrackSchemaV3.models)
+        // IMPORTANT: Always use the CURRENT (latest) versioned schema here, matching the
+        // final version in SimplyTrackMigrationPlan.schemas. The FoodEntry/FoodCatalogItem/
+        // UserProfile typealiases point to this same version. Registering an older schema
+        // version's model classes here causes a Swift type-identity mismatch with the rest
+        // of the app (which uses the typealiases), leading to runtime crashes like
+        // "Failed to cast model ...SimplyTrackSchemaV4.FoodEntry ... to FoodEntry".
+        let schema = Schema(SimplyTrackSchemaV4.models)
 
         let persistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

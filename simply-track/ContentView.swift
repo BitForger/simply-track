@@ -249,7 +249,13 @@ struct ContentView: View {
             return
         }
 
-        let startDate = Calendar.current.startOfDay(for: .now)
+        // Pull a short lookback window (not just "today") so entries logged directly in
+        // the Health app on previous days (e.g. yesterday) are reflected locally even if
+        // this app wasn't opened on those days. LogEntriesView shows Today + Yesterday,
+        // so we need at least 2 days of history available locally on every launch.
+        let lookbackDays = 2
+        let todayStart = Calendar.current.startOfDay(for: .now)
+        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: todayStart) ?? todayStart
         let payloads = await syncCoordinator.pullLatestEntries(from: startDate, to: .now)
 
         if !payloads.isEmpty {

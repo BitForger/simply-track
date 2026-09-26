@@ -254,6 +254,15 @@ struct SettingsView: View {
                 }
             }
             Section("Metabolism") {
+                NavigationLink {
+                    TDEEEquationSettingsView(profile: profile)
+                } label: {
+                    LabeledContent("TDEE Equation") {
+                        Text(profile.tdeeEquation.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Text("Estimated BMR: \(Int(profile.estimatedBMR())) cal/day")
                 Text("Estimated TDEE: \(Int(profile.estimatedTDEE())) cal/day")
                     .foregroundStyle(.secondary)

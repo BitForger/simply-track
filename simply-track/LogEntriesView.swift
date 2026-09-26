@@ -30,6 +30,10 @@ struct LogEntriesView: View {
         CalorieSummaryCalculator.dailyTotal(from: entries, on: yesterdayDate)
     }
 
+    private var yesterdayEntries: [FoodEntry] {
+        entries.filter { Calendar.current.isDate($0.consumedAt, inSameDayAs: yesterdayDate) }
+    }
+
     private var dietaryHistoryURLs: [URL] {
         [
             "x-apple-health://SampleType?type=HKQuantityTypeIdentifierDietaryEnergyConsumed",
@@ -51,36 +55,7 @@ struct LogEntriesView: View {
                 }
 
                 ForEach(todayEntries) { entry in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(entry.foodName)
-                            Text(entry.amountDescription)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("\(Int(entry.calories)) cal")
-                            Text(entry.consumedAt, format: .dateTime.hour().minute())
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            deleteSingleEntry(entry)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-
-                        Button {
-                            beginEditing(entry)
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        .tint(.blue)
-                    }
-                    .tag(entry.id)
+                    entryRow(entry)
                 }
             }
 
@@ -92,6 +67,16 @@ struct LogEntriesView: View {
                     Text("\(Int(yesterdayCalories)) cal")
                         .foregroundStyle(.secondary)
                 }
+
+                if yesterdayEntries.isEmpty {
+                    Text("No entries logged yesterday.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(yesterdayEntries) { entry in
+                        entryRow(entry)
+                    }
+                }
+
                 if #unavailable(iOS 26.0) {
                     Button {
                         openHealthDietaryHistory()
@@ -154,6 +139,40 @@ struct LogEntriesView: View {
                 selectedEntryIDs.removeAll()
             }
         }
+    }
+
+    @ViewBuilder
+    private func entryRow(_ entry: FoodEntry) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(entry.foodName)
+                Text(entry.amountDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing) {
+                Text("\(Int(entry.calories)) cal")
+                Text(entry.consumedAt, format: .dateTime.hour().minute())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                deleteSingleEntry(entry)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+
+            Button {
+                beginEditing(entry)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
+        .tag(entry.id)
     }
 
     private func openHealthDietaryHistory() {
