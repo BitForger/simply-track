@@ -15,6 +15,7 @@ import HealthKit
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query private var profiles: [UserProfile]
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
     @Query(sort: \FoodCatalogItem.name) private var foodCatalog: [FoodCatalogItem]
 
@@ -26,23 +27,27 @@ struct ContentView: View {
     @StateObject private var syncCoordinator = HealthKitSyncCoordinator()
     private let reminderManager = ReminderManager()
 
-    @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
-    @AppStorage("useHealthSync") private var useHealthSync = true
-    @AppStorage("enableReminders") private var enableReminders = false
-    @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
-    @AppStorage("autoSaveToCatalog") private var autoSaveToCatalog = true
+    private var profile: UserProfile {
+        if let existing = profiles.first {
+            return existing
+        }
+
+        let fallbackProfile = UserProfile()
+        modelContext.insert(fallbackProfile)
+        return fallbackProfile
+    }
 
     var body: some View {
         TabView {
             NavigationViewWrapper {
                 HomeDashboardView(
                     entries: entries,
-                    includeActiveCaloriesInMax: includeActiveCaloriesInMax,
+                    includeActiveCaloriesInMax: profile.includeActiveCaloriesInMax,
                     dailyActiveCaloriesBurned: dailyActiveCaloriesBurned,
                     weeklyActiveCaloriesBurned: weeklyActiveCaloriesBurned,
                     activeCaloriesFallbackMessage: activeCaloriesFallbackMessage,
                     syncMessage: syncCoordinator.syncMessage,
-                    hasCompletedQuickStart: hasCompletedQuickStart,
+                    hasCompletedQuickStart: profile.hasCompletedQuickStart,
                     onOpenQuickStart: { showingQuickStartSheet = true }
                 )
             }
@@ -75,7 +80,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAddEntrySheet) {
-            AddFoodEntrySheet(foodCatalog: foodCatalog, initialSaveToCatalog: autoSaveToCatalog) { payload in
+            AddFoodEntrySheet(foodCatalog: foodCatalog, initialSaveToCatalog: profile.autoSaveToCatalog) { payload in
                 addEntry(payload)
             }
         }
@@ -83,16 +88,16 @@ struct ContentView: View {
             quickStartSheet
         }
         .task {
-            migrateLegacyHealthSyncPreferenceIfNeeded()
+            migrateLegacyPreferencesIntoProfileIfNeeded()
             bootstrapIfNeeded()
             await refreshHealthDataForCurrentPreferences()
         }
-        .onChange(of: enableReminders) { _, enabled in
+        .onChange(of: profile.enableReminders) { _, enabled in
             Task {
                 await updateReminderSchedule(enabled: enabled)
             }
         }
-        .onChange(of: useHealthSync) { _, enabled in
+        .onChange(of: profile.useHealthSync) { _, enabled in
             Task {
                 if enabled {
                     await refreshHealthDataForCurrentPreferences()
@@ -101,49 +106,70 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: includeActiveCaloriesInMax) { _, enabled in
+        .onChange(of: profile.includeActiveCaloriesInMax) { _, enabled in
             guard enabled else {
                 clearActiveCaloriesState()
                 return
             }
 
             Task {
-                guard useHealthSync else { return }
+                guard profile.useHealthSync else { return }
                 await refreshActiveCaloriesBurned()
             }
         }
     }
 
-    private func migrateLegacyHealthSyncPreferenceIfNeeded() {
+    private func migrateLegacyPreferencesIntoProfileIfNeeded() {
         let defaults = UserDefaults.standard
-        let newKey = "useHealthSync"
-        let legacyKey = "useCloudKitSync"
+        let markerKey = "didMigratePreferencesToUserProfileV1"
 
-        guard defaults.object(forKey: newKey) == nil,
-              let legacyValue = defaults.object(forKey: legacyKey) as? Bool else {
+        guard defaults.bool(forKey: markerKey) == false else {
             return
         }
 
-        defaults.set(legacyValue, forKey: newKey)
-        useHealthSync = legacyValue
+        if let value = defaults.object(forKey: "hasCompletedQuickStart") as? Bool {
+            profile.hasCompletedQuickStart = value
+        }
+        if let value = defaults.object(forKey: "useHealthSync") as? Bool {
+            profile.useHealthSync = value
+        } else if let value = defaults.object(forKey: "useCloudKitSync") as? Bool {
+            profile.useHealthSync = value
+        }
+        if let value = defaults.object(forKey: "enableReminders") as? Bool {
+            profile.enableReminders = value
+        }
+        if let value = defaults.object(forKey: "includeActiveCaloriesInMax") as? Bool {
+            profile.includeActiveCaloriesInMax = value
+        }
+        if let value = defaults.object(forKey: "autoSaveToCatalog") as? Bool {
+            profile.autoSaveToCatalog = value
+        }
+
+        defaults.set(true, forKey: markerKey)
     }
 
     private var quickStartSheet: some View {
         QuickStartOnboardingView(
-            useHealthSync: $useHealthSync,
-            enableReminders: $enableReminders,
+            useHealthSync: Binding(
+                get: { profile.useHealthSync },
+                set: { profile.useHealthSync = $0 }
+            ),
+            enableReminders: Binding(
+                get: { profile.enableReminders },
+                set: { profile.enableReminders = $0 }
+            ),
             onRequestHealthKit: {
                 await authorizeAndSyncHealthKit()
             },
             onComplete: {
-                hasCompletedQuickStart = true
+                profile.hasCompletedQuickStart = true
                 showingQuickStartSheet = false
             }
         )
     }
 
     private func authorizeAndSyncHealthKit() async {
-        guard useHealthSync else {
+        guard profile.useHealthSync else {
             syncCoordinator.syncMessage = "Enable Health sync in Settings before requesting HealthKit access."
             return
         }
@@ -239,12 +265,12 @@ struct ContentView: View {
         }
 
         Task {
-            await updateReminderSchedule(enabled: enableReminders)
+            await updateReminderSchedule(enabled: profile.enableReminders)
         }
     }
 
     private func refreshFromHealthKit() async {
-        guard useHealthSync else {
+        guard profile.useHealthSync else {
             clearActiveCaloriesState()
             return
         }
@@ -289,7 +315,7 @@ struct ContentView: View {
             }
         }
 
-        if includeActiveCaloriesInMax {
+        if profile.includeActiveCaloriesInMax {
             await refreshActiveCaloriesBurned()
         } else {
             clearActiveCaloriesState()
@@ -297,7 +323,7 @@ struct ContentView: View {
     }
 
     private func refreshActiveCaloriesBurned() async {
-        guard useHealthSync, includeActiveCaloriesInMax else {
+        guard profile.useHealthSync, profile.includeActiveCaloriesInMax else {
             clearActiveCaloriesState()
             return
         }
@@ -321,12 +347,12 @@ struct ContentView: View {
     }
 
     private func syncAllEntriesWithHealthKit() async {
-        guard useHealthSync else { return }
+        guard profile.useHealthSync else { return }
         await syncEntriesWithHealthKit(entries.map(CalorieEntryPayload.init))
     }
 
     private func syncEntriesWithHealthKit(_ snapshots: [CalorieEntryPayload]) async {
-        guard useHealthSync else { return }
+        guard profile.useHealthSync else { return }
         let mergedPayloads = await syncCoordinator.sync(localEntries: snapshots)
 
         for payload in mergedPayloads {
@@ -370,7 +396,7 @@ struct ContentView: View {
     }
 
     private func refreshHealthDataForCurrentPreferences() async {
-        guard useHealthSync else {
+        guard profile.useHealthSync else {
             clearActiveCaloriesState()
             return
         }

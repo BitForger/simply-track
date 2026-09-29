@@ -18,11 +18,6 @@ struct SettingsView: View {
     @Query(sort: \FoodCatalogItem.name) private var foodCatalog: [FoodCatalogItem]
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
 
-    @AppStorage("hasCompletedQuickStart") private var hasCompletedQuickStart = false
-    @AppStorage("useHealthSync") private var useHealthSync = true
-    @AppStorage("enableReminders") private var enableReminders = false
-    @AppStorage("includeActiveCaloriesInMax") private var includeActiveCaloriesInMax = false
-    @AppStorage("autoSaveToCatalog") private var autoSaveToCatalog = true
     @State private var showingHealthImportSheet = false
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
@@ -123,25 +118,31 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Privacy & Sync") {
-                Toggle("Enable Health sync", isOn: $useHealthSync)
-                Toggle("Enable reminders", isOn: $enableReminders)
+                Toggle("Enable Health sync", isOn: Binding(
+                    get: { profile.useHealthSync },
+                    set: { profile.useHealthSync = $0 }
+                ))
+                Toggle("Enable reminders", isOn: Binding(
+                    get: { profile.enableReminders },
+                    set: { profile.enableReminders = $0 }
+                ))
                 Button("Request HealthKit Access") {
                     Task { await onRequestHealthKit() }
                 }
-                .disabled(!useHealthSync)
+                .disabled(!profile.useHealthSync)
 
-                if !useHealthSync {
+                if !profile.useHealthSync {
                     Text("Turn on Health sync to request and use HealthKit access.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if !hasCompletedQuickStart {
+            if !profile.hasCompletedQuickStart {
                 Section("Quick Start") {
                     Label(
-                        hasCompletedQuickStart ? "Completed" : "Not completed",
-                        systemImage: hasCompletedQuickStart ? "checkmark.circle.fill" : "exclamationmark.circle"
+                        profile.hasCompletedQuickStart ? "Completed" : "Not completed",
+                        systemImage: profile.hasCompletedQuickStart ? "checkmark.circle.fill" : "exclamationmark.circle"
                     )
                     Button("Open Quick Start") {
                         onOpenQuickStart()
@@ -268,7 +269,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Targets") {
-                Toggle("Adjust max with active calories burned", isOn: $includeActiveCaloriesInMax)
+                Toggle("Adjust max with active calories burned", isOn: Binding(
+                    get: { profile.includeActiveCaloriesInMax },
+                    set: { profile.includeActiveCaloriesInMax = $0 }
+                ))
 
                 Text(burnAdjustmentSummary)
                     .font(.caption)
@@ -343,7 +347,10 @@ struct SettingsView: View {
             }
 
             Section("Personal Foods") {
-                Toggle("Auto-save manual entries", isOn: $autoSaveToCatalog)
+                Toggle("Auto-save manual entries", isOn: Binding(
+                    get: { profile.autoSaveToCatalog },
+                    set: { profile.autoSaveToCatalog = $0 }
+                ))
                 Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
