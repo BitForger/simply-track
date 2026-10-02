@@ -319,6 +319,7 @@ struct SettingsView: View {
                     profile.weeklyCalorieTarget = profile.recommendedWeeklyTarget()
                     dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
                     weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
+                    commitProfileChanges()
                 }
 
                 LabeledContent("Daily target") {
@@ -430,6 +431,17 @@ struct SettingsView: View {
                 weeklyTargetInput = formattedCalories(newValue)
             }
         }
+        .onChange(of: profile.age) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.heightCm) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.weightKg) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.activityMultiplier) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.biologicalSex) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.nutritionGoal) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.weightLossPace) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.includeActiveCaloriesInMax) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.useHealthSync) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.enableReminders) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.autoSaveToCatalog) { _, _ in commitProfileChanges() }
         .navigationTitle("Settings")
         
     }
@@ -487,6 +499,18 @@ struct SettingsView: View {
             weeklyTargetInput = formattedCalories(clampedWeekly)
         } else {
             weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
+        }
+        
+        // Explicitly save critical profile changes
+        commitProfileChanges()
+    }
+
+    private func commitProfileChanges() {
+        do {
+            try modelContext.save()
+        } catch {
+            print("Warning: Failed to save profile changes: \(error)")
+            // App continues; SwiftData will attempt to save on next opportunity
         }
     }
 

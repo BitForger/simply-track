@@ -15,6 +15,7 @@ import HealthKit
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(PersistenceStatus.self) private var persistenceStatus
     @Query private var profiles: [UserProfile]
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
     @Query(sort: \FoodCatalogItem.name) private var foodCatalog: [FoodCatalogItem]
@@ -38,7 +39,8 @@ struct ContentView: View {
     }
 
     var body: some View {
-        TabView {
+        ZStack(alignment: .top) {
+            TabView {
             NavigationViewWrapper {
                 HomeDashboardView(
                     entries: entries,
@@ -77,6 +79,39 @@ struct ContentView: View {
             }
             .tabItem {
                 Label("Settings", systemImage: "gear")
+            }
+            }
+            
+            // Show persistence error banner if needed
+            if let error = persistenceStatus.error {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        Image(systemName: persistenceStatus.isCloudKitQuotaError ? "icloud.slash" : "exclamationmark.circle.fill")
+                            .foregroundStyle(persistenceStatus.isCloudKitQuotaError ? .orange : .red)
+                            .font(.title3)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(error.errorDescription ?? "Storage Error")
+                                .font(.headline)
+                            if persistenceStatus.mode == .localOnly {
+                                Text("Using local storage only—changes will not sync to iCloud.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    
+                    if persistenceStatus.isCloudKitQuotaError {
+                        Text("Free up iCloud storage space and relaunch the app to re-enable CloudKit sync.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .border(Color(.systemGray4))
             }
         }
         .sheet(isPresented: $showingAddEntrySheet) {
