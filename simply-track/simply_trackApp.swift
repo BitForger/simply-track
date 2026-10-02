@@ -14,6 +14,7 @@ import SwiftData
     enum Mode: Equatable {
         case cloudKitBacked
         case localOnly
+        case inMemoryOnly
     }
 
     var mode: Mode = .cloudKitBacked
@@ -62,7 +63,14 @@ import SwiftData
 
 @main
 struct simply_trackApp: App {
-    @State private var persistenceStatus = PersistenceStatus()
+    @State private var persistenceStatus: PersistenceStatus
+    private let sharedModelContainer: ModelContainer
+
+    init() {
+        let status = PersistenceStatus()
+        _persistenceStatus = State(initialValue: status)
+        sharedModelContainer = Self.createModelContainer(persistenceStatus: status)
+    }
 
     private static let appSupportURL = URL.applicationSupportDirectory
     private static let persistentStoreBaseName = "default.store"
@@ -89,7 +97,7 @@ struct simply_trackApp: App {
 
     /// Backs up the persistent store asynchronously in the background to avoid blocking app startup.
     /// This method returns immediately; actual backup happens on a background thread.
-    private static func backupPersistentStoreIfPresent() {
+    private static func schedulePersistentStoreBackup() {
         // Dispatch to a background thread to avoid blocking the main thread.
         // App initialization can proceed while backups happen in the background.
         DispatchQueue.global(qos: .background).async {
@@ -121,6 +129,21 @@ struct simply_trackApp: App {
         }
     }
 
+    /// Removes SQLite sidecar files that can prevent a healthy local store from opening after a failed launch.
+    private static func removePersistentStoreSidecars() {
+        let fileManager = FileManager.default
+        for storeURL in persistentStoreURLs where storeURL.lastPathComponent != persistentStoreBaseName {
+            if fileManager.fileExists(atPath: storeURL.path) {
+                do {
+                    try fileManager.removeItem(at: storeURL)
+                    print("INFO: Removed stale persistent store sidecar: \(storeURL.lastPathComponent)")
+                } catch {
+                    print("Warning: Could not remove sidecar \(storeURL.lastPathComponent): \(error)")
+                }
+            }
+        }
+    }
+
     /// Detects if an error is due to CloudKit storage quota being exceeded.
     private static func isCloudKitQuotaError(_ error: Error) -> Bool {
         if let nsError = error as? NSError {
@@ -135,10 +158,9 @@ struct simply_trackApp: App {
     }
 
     /// Creates and returns a ModelContainer, updating persistenceStatus on fallback.
-    private func createModelContainer() -> ModelContainer {
+    private static func createModelContainer(persistenceStatus: PersistenceStatus) -> ModelContainer {
         print("DEBUG: Initializing SimplyTrack app with SwiftData")
         Self.ensureAppSupportDirectoryExists()
-        Self.backupPersistentStoreIfPresent()
 
         let schema = Schema(SimplyTrackSchemaV6.models)
 
@@ -162,6 +184,7 @@ struct simply_trackApp: App {
             persistenceStatus.error = nil
             persistenceStatus.isCloudKitQuotaError = false
             print("INFO: Successfully initialized CloudKit-backed store")
+            Self.schedulePersistentStoreBackup()
             return container
         } catch {
             // Detect if this is a storage quota error
@@ -187,24 +210,45 @@ struct simply_trackApp: App {
             )
             persistenceStatus.mode = .localOnly
             print("INFO: Successfully initialized local-only persistent store")
+            Self.schedulePersistentStoreBackup()
             return container
         } catch {
             print("ERROR: Failed to open local persistent SwiftData store: \(error)")
-            persistenceStatus.error = .localStorageFailed(error.localizedDescription)
 
-            // CRITICAL: Do NOT silently fall back to in-memory storage.
-            // Users must be aware their data won't persist between launches.
-            // Show a visible error and crash rather than silently losing data.
-            fatalError(
-                "Critical: Local data persistence failed and we cannot safely continue. "
-                + "This prevents data loss. Error: \(error.localizedDescription)\n"
-                + "Details: Check iCloud settings, available storage space, and app file system permissions."
-            )
+            print("INFO: Attempting to recover local store by clearing stale SQLite sidecar files")
+            Self.removePersistentStoreSidecars()
+
+            do {
+                let recoveredContainer = try ModelContainer(
+                    for: schema,
+                    migrationPlan: SimplyTrackMigrationPlan.self,
+                    configurations: [localPersistentConfiguration]
+                )
+                persistenceStatus.mode = .localOnly
+                persistenceStatus.error = nil
+                persistenceStatus.isCloudKitQuotaError = false
+                print("INFO: Successfully recovered local-only persistent store after cleanup")
+                Self.schedulePersistentStoreBackup()
+                return recoveredContainer
+            } catch {
+                print("ERROR: Local persistent store recovery failed: \(error)")
+                persistenceStatus.mode = .inMemoryOnly
+                persistenceStatus.error = .localStorageFailed(error.localizedDescription)
+
+                let inMemoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                do {
+                    let inMemoryContainer = try ModelContainer(
+                        for: schema,
+                        migrationPlan: SimplyTrackMigrationPlan.self,
+                        configurations: [inMemoryConfiguration]
+                    )
+                    print("WARNING: Falling back to in-memory SwiftData store; changes will not persist between launches")
+                    return inMemoryContainer
+                } catch {
+                    preconditionFailure("Could not create ModelContainer even in memory after local storage recovery failure: \(error)")
+                }
+            }
         }
-    }
-
-    var sharedModelContainer: ModelContainer {
-        createModelContainer()
     }
 
     var body: some Scene {
