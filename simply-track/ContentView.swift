@@ -10,6 +10,7 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(PersistenceStatus.self) private var persistenceStatus
     @Query private var profiles: [UserProfile]
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
@@ -68,7 +69,8 @@ struct ContentView: View {
                     onRequestHealthKit: {
                         await authorizeAndSyncHealthKit()
                     },
-                    hasHealthKitAccess: syncCoordinator.hasHealthKitAccess
+                    hasHealthKitAccess: syncCoordinator.hasHealthKitAccess,
+                    includeActiveCaloriesInMax: profile.includeActiveCaloriesInMax
                 )
             }
             .tabItem {
@@ -92,6 +94,14 @@ struct ContentView: View {
             migrateLegacyPreferencesIntoProfileIfNeeded()
             bootstrapIfNeeded()
             await refreshHealthDataForCurrentPreferences()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+
+            syncCoordinator.refreshAuthorizationStatus()
+            Task {
+                await refreshHealthDataForCurrentPreferences()
+            }
         }
         .onChange(of: profile.enableReminders) { _, enabled in
             Task {
@@ -175,7 +185,7 @@ struct ContentView: View {
             return false
         }
 
-        await syncCoordinator.requestAuthorization()
+        await syncCoordinator.requestAuthorization(includeActiveCalories: profile.includeActiveCaloriesInMax)
         guard syncCoordinator.hasHealthKitAccess else {
             profile.useHealthSync = false
             syncCoordinator.syncMessage = "HealthKit access wasn't granted. Health sync has been turned off."
@@ -404,6 +414,7 @@ struct ContentView: View {
     }
 
     private func refreshHealthDataForCurrentPreferences() async {
+        syncCoordinator.refreshAuthorizationStatus()
         guard profile.useHealthSync else {
             clearActiveCaloriesState()
             return
@@ -449,26 +460,23 @@ private struct PersistenceStatusBannerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(error.errorDescription ?? "Storage Error")
                         .font(.headline)
-                    if status.mode == .localOnly {
-                        Text("Using local storage only—changes will not sync to iCloud.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if status.mode == .inMemoryOnly {
-                        Text("The app is currently using temporary in-memory storage, so changes will be lost when the app closes.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+
+                    Text(modeDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
             }
 
-            if status.isCloudKitQuotaError {
-                Text("Free up iCloud storage space and relaunch the app to re-enable CloudKit sync.")
+            if let failureReason = error.failureReason {
+                Text(failureReason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if status.mode == .inMemoryOnly {
-                Text("Please restart the app after checking iCloud/account settings or contact support if the problem continues.")
+            }
+
+            if let recoverySuggestion = error.recoverySuggestion {
+                Text(recoverySuggestion)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -476,6 +484,17 @@ private struct PersistenceStatusBannerView: View {
         .padding()
         .background(Color(.systemGray6))
         .border(Color(.systemGray4))
+    }
+
+    private var modeDescription: String {
+        switch status.mode {
+        case .cloudKitBacked:
+            return "CloudKit-backed storage is active."
+        case .localOnly:
+            return "The app is using local storage only, so changes will not sync to iCloud."
+        case .inMemoryOnly:
+            return "The app is using temporary in-memory storage, so changes will be lost when it closes."
+        }
     }
 }
 

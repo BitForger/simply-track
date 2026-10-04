@@ -74,7 +74,7 @@ struct QuickStartOnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Health integration")
                 .font(.title3.weight(.semibold))
-            Text("The app reads latest calorie data from Apple Health before syncing, then writes updates.")
+            Text("The app requests Health data only for the features you enable, so sync and active calorie adjustments stay separate.")
                 .foregroundStyle(.secondary)
             Button(isRequestingHealthKit ? "Requesting…" : "Allow Health Access") {
                 Task {
@@ -84,7 +84,7 @@ struct QuickStartOnboardingView: View {
                     let granted = await onRequestHealthKit()
                     useHealthSync = granted
                     healthKitRequestMessage = granted
-                        ? "Health access granted. You can continue to the next step."
+                        ? "Health access granted for the features you enabled. You can continue to the next step."
                         : "Health access wasn't granted. You can continue without Health sync."
                 }
             }

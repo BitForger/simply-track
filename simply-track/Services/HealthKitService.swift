@@ -24,23 +24,31 @@ final class HealthKitService {
         var errorDescription: String? {
             switch self {
             case .unsupported:
-                return "HealthKit is not available on this platform or required quantity types are unavailable."
+                return "HealthKit is not available on this platform."
             case .authorizationUnavailable:
                 return "HealthKit permissions are unavailable."
             }
         }
     }
 
-    func requestAuthorization() async throws {
+    func requestAuthorization(includeActiveCalories: Bool) async throws {
 #if canImport(HealthKit)
         guard HKHealthStore.isHealthDataAvailable(),
-              let dietaryType,
-              let activeEnergyType else {
-            throw ServiceError.unsupported
+              let dietaryType else {
+            throw ServiceError.authorizationUnavailable
+        }
+
+        var readTypes: Set<HKObjectType> = [dietaryType]
+        if includeActiveCalories {
+            guard let activeEnergyType else {
+                throw ServiceError.unsupported
+            }
+
+            readTypes.insert(activeEnergyType)
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            store.requestAuthorization(toShare: [dietaryType], read: [dietaryType, activeEnergyType]) { granted, error in
+            store.requestAuthorization(toShare: [dietaryType], read: readTypes) { granted, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else if granted {
@@ -98,10 +106,6 @@ final class HealthKitService {
 
     func fetchEntries(from startDate: Date, to endDate: Date) async throws -> [CalorieEntryPayload] {
 #if canImport(HealthKit)
-        guard let dietaryType else {
-            throw ServiceError.unsupported
-        }
-
         let samples = try await fetchSamples(from: startDate, to: endDate)
         return samples.map { sample in
             let metadata = sample.metadata ?? [:]
@@ -226,7 +230,7 @@ final class HealthKitService {
             )
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             store.save(samples) { success, error in
                 if let error {
                     continuation.resume(throwing: error)
