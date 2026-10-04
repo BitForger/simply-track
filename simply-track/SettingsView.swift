@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State private var isLoadingHealthImportCandidates = false
     @State private var healthImportStatusMessage: String?
     @State private var healthImportCandidates: [HealthImportCandidate] = []
+    @State private var cachedHealthImportCandidates: [HealthImportCandidate] = []
+    @State private var cachedHealthImportFetchedAt: Date?
     @State private var isUpdatingReminderPreference = false
     @State private var reminderPermissionMessage: String?
     @State private var pendingSaveTask: Task<Void, Never>?
@@ -33,6 +35,9 @@ struct SettingsView: View {
     private let healthKitService = HealthKitService()
     private let reminderManager = ReminderManager()
     private let saveDebounceNanoseconds: UInt64 = 350_000_000
+    private let healthImportLookbackDays = 90
+    private let healthImportPageDays = 30
+    private let healthImportCacheTTL: TimeInterval = 10 * 60
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
     let hasHealthKitAccess: Bool
@@ -660,29 +665,74 @@ struct SettingsView: View {
             return
         }
 
+        if shouldUseCachedHealthImportResult,
+           !cachedHealthImportCandidates.isEmpty,
+           let cachedHealthImportFetchedAt {
+            healthImportCandidates = cachedHealthImportCandidates
+            healthImportStatusMessage = "Showing cached results (\(cachedHealthImportCandidates.count) foods, updated \(relativeTimestamp(for: cachedHealthImportFetchedAt)))."
+            showingHealthImportSheet = true
+            return
+        }
+
         isLoadingHealthImportCandidates = true
-        healthImportStatusMessage = nil
+        healthImportStatusMessage = "Scanning Health foods from the last \(healthImportLookbackDays) days..."
 
         defer {
             isLoadingHealthImportCandidates = false
         }
 
-        let startDate = Calendar.current.date(byAdding: .year, value: -5, to: .now) ?? .distantPast
-        let fetchedPayloads = await fetchHealthEntries(from: startDate, to: .now)
+        let now = Date()
+        let startDate = Calendar.current.date(byAdding: .day, value: -healthImportLookbackDays, to: now) ?? now
+        let windows = makeIncrementalHealthImportWindows(from: startDate, to: now, stepDays: healthImportPageDays)
+        var fetchedPayloads: [CalorieEntryPayload] = []
+
+        for (index, window) in windows.enumerated() {
+            healthImportStatusMessage = "Scanning Health foods... \(index + 1)/\(windows.count)"
+            let pagePayloads = await fetchHealthEntries(from: window.start, to: window.end)
+            fetchedPayloads.append(contentsOf: pagePayloads)
+        }
+
         let importedCandidates = makeHealthImportCandidates(from: fetchedPayloads)
         let fallbackCandidates = importedCandidates.isEmpty ? localHealthImportCandidates : importedCandidates
 
         healthImportCandidates = fallbackCandidates
+        cachedHealthImportCandidates = fallbackCandidates
+        cachedHealthImportFetchedAt = now
 
         if fallbackCandidates.isEmpty {
-            healthImportStatusMessage = "No importable foods were found in Health."
+            healthImportStatusMessage = "No importable foods found in the last \(healthImportLookbackDays) days."
             showingHealthImportSheet = false
         } else {
             healthImportStatusMessage = importedCandidates.isEmpty
-                ? "Loaded previously synced Health entries."
-                : nil
+                ? "Found \(fallbackCandidates.count) importable foods from previous sync entries."
+                : "Found \(fallbackCandidates.count) importable foods from Health."
             showingHealthImportSheet = true
         }
+    }
+
+    private var shouldUseCachedHealthImportResult: Bool {
+        guard let cachedHealthImportFetchedAt else { return false }
+        return Date().timeIntervalSince(cachedHealthImportFetchedAt) <= healthImportCacheTTL
+    }
+
+    private func relativeTimestamp(for date: Date) -> String {
+        Self.relativeDateTimeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func makeIncrementalHealthImportWindows(from startDate: Date, to endDate: Date, stepDays: Int) -> [(start: Date, end: Date)] {
+        guard startDate < endDate, stepDays > 0 else { return [(start: startDate, end: endDate)] }
+
+        var windows: [(start: Date, end: Date)] = []
+        var cursor = startDate
+        let calendar = Calendar.current
+
+        while cursor < endDate {
+            let next = min(calendar.date(byAdding: .day, value: stepDays, to: cursor) ?? endDate, endDate)
+            windows.append((start: cursor, end: next))
+            cursor = next
+        }
+
+        return windows
     }
 
     private func fetchHealthEntries(from startDate: Date, to endDate: Date) async -> [CalorieEntryPayload] {
@@ -747,6 +797,12 @@ struct SettingsView: View {
         formatter.groupingSeparator = Locale.current.groupingSeparator
         formatter.usesGroupingSeparator = true
         formatter.maximumFractionDigits = 0
+        return formatter
+    }()
+
+    private static let relativeDateTimeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
         return formatter
     }()
 }
