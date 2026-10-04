@@ -171,4 +171,44 @@ final class simply_trackTests: XCTestCase {
         XCTAssertEqual(CalorieSummaryCalculator.remainingWeeklyCalories(total: 2201, target: 2000), 0)
         XCTAssertEqual(CalorieSummaryCalculator.remainingWeeklyCalories(total: 1500, target: 2000), 500)
     }
+
+    func testUserProfileUsesMifflinStJeorForDefaultTargets() {
+        let profile = SimplyTrackSchemaV7.UserProfile()
+
+        XCTAssertEqual(profile.estimatedBMR(), 1698.75, accuracy: 0.001)
+        XCTAssertEqual(profile.estimatedTDEE(), 2335.78125, accuracy: 0.001)
+        XCTAssertEqual(profile.recommendedDailyTarget(), 2335.78125, accuracy: 0.001)
+        XCTAssertEqual(profile.recommendedWeeklyTarget(), 16350.46875, accuracy: 0.001)
+    }
+
+    func testUserProfileUsesOtherEquationPathsAndWeightLossFloor() {
+        let harrisBenedict = SimplyTrackSchemaV7.UserProfile(
+            sexRawValue: BiologicalSex.female.rawValue,
+            tdeeEquationRawValue: TDEEEquation.harrisBenedict.rawValue
+        )
+        XCTAssertEqual(harrisBenedict.estimatedBMR(), 1553.368, accuracy: 0.001)
+        XCTAssertEqual(harrisBenedict.estimatedTDEE(), 2135.881, accuracy: 0.001)
+
+        let katchFallback = SimplyTrackSchemaV7.UserProfile(
+            tdeeEquationRawValue: TDEEEquation.katchMcArdle.rawValue,
+            leanBodyMassKg: nil
+        )
+        XCTAssertEqual(katchFallback.estimatedBMR(), 1698.75, accuracy: 0.001)
+
+        let katchWithLeanBodyMass = SimplyTrackSchemaV7.UserProfile(
+            tdeeEquationRawValue: TDEEEquation.katchMcArdle.rawValue,
+            leanBodyMassKg: 60
+        )
+        XCTAssertEqual(katchWithLeanBodyMass.estimatedBMR(), 1666, accuracy: 0.001)
+        XCTAssertEqual(katchWithLeanBodyMass.estimatedTDEE(), 2289.25, accuracy: 0.001)
+
+        let aggressiveCut = SimplyTrackSchemaV7.UserProfile(
+            heightCm: 155,
+            weightKg: 45,
+            activityMultiplier: 1.2,
+            nutritionGoalRawValue: NutritionGoal.loseWeight.rawValue,
+            weightLossPaceRawValue: WeightLossPace.twoPoundsPerWeek.rawValue
+        )
+        XCTAssertEqual(aggressiveCut.recommendedDailyTarget(), 1200, accuracy: 0.001)
+    }
 }
