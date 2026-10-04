@@ -76,44 +76,8 @@ struct ContentView: View {
             }
             }
             
-            // Show persistence error banner if needed
             if let error = persistenceStatus.error {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 12) {
-                        Image(systemName: persistenceStatus.isCloudKitQuotaError ? "icloud.slash" : "exclamationmark.circle.fill")
-                            .foregroundStyle(persistenceStatus.isCloudKitQuotaError ? .orange : .red)
-                            .font(.title3)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(error.errorDescription ?? "Storage Error")
-                                .font(.headline)
-                            if persistenceStatus.mode == .localOnly {
-                                Text("Using local storage only—changes will not sync to iCloud.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else if persistenceStatus.mode == .inMemoryOnly {
-                                Text("The app is currently using temporary in-memory storage, so changes will be lost when the app closes.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        
-                        Spacer()
-                    }
-                    
-                    if persistenceStatus.isCloudKitQuotaError {
-                        Text("Free up iCloud storage space and relaunch the app to re-enable CloudKit sync.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if persistenceStatus.mode == .inMemoryOnly {
-                        Text("Please restart the app after checking iCloud/account settings or contact support if the problem continues.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .border(Color(.systemGray4))
+                PersistenceStatusBannerView(error: error, status: persistenceStatus)
             }
         }
         .sheet(isPresented: $showingAddEntrySheet) {
@@ -469,6 +433,51 @@ struct ContentView: View {
     }
 }
 
+
+
+private struct PersistenceStatusBannerView: View {
+    let error: PersistenceStatus.PersistenceError
+    let status: PersistenceStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: status.isCloudKitQuotaError ? "icloud.slash" : "exclamationmark.circle.fill")
+                    .foregroundStyle(status.isCloudKitQuotaError ? .orange : .red)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(error.errorDescription ?? "Storage Error")
+                        .font(.headline)
+                    if status.mode == .localOnly {
+                        Text("Using local storage only—changes will not sync to iCloud.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if status.mode == .inMemoryOnly {
+                        Text("The app is currently using temporary in-memory storage, so changes will be lost when the app closes.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+
+            if status.isCloudKitQuotaError {
+                Text("Free up iCloud storage space and relaunch the app to re-enable CloudKit sync.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if status.mode == .inMemoryOnly {
+                Text("Please restart the app after checking iCloud/account settings or contact support if the problem continues.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .border(Color(.systemGray4))
+    }
+}
 
 #Preview {
     ContentView()
