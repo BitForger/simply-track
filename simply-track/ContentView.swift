@@ -28,9 +28,7 @@ struct ContentView: View {
             return existing
         }
 
-        let fallbackProfile = UserProfile()
-        modelContext.insert(fallbackProfile)
-        return fallbackProfile
+        return UserProfile()
     }
 
     var body: some View {

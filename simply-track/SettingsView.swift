@@ -57,9 +57,7 @@ struct SettingsView: View {
             return existing
         }
 
-        let fallbackProfile = UserProfile()
-        modelContext.insert(fallbackProfile)
-        return fallbackProfile
+        return UserProfile()
     }
 
     @State private var isAgeExpanded = false
