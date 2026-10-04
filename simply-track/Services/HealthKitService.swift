@@ -53,6 +53,18 @@ final class HealthKitService {
 #endif
     }
 
+    func hasCurrentAuthorization() -> Bool {
+#if canImport(HealthKit)
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return false
+        }
+
+        return store.authorizationStatus(for: dietaryType) == .sharingAuthorized
+#else
+        return false
+#endif
+    }
+
     func fetchActiveCaloriesBurned(from startDate: Date, to endDate: Date) async throws -> Double {
 #if canImport(HealthKit)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Double, Error>) in

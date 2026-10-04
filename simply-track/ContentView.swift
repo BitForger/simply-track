@@ -450,15 +450,22 @@ struct ContentView: View {
     }
 
     private func updateReminderSchedule(enabled: Bool) async {
-        do {
-            if enabled {
-                try await reminderManager.enableDefaultReminder()
-            } else {
-                await reminderManager.disableReminder()
+        if enabled {
+            let status = await reminderManager.enableDefaultReminder()
+            switch status {
+            case .scheduled:
+                break
+            case .denied:
+                profile.enableReminders = false
+                syncCoordinator.syncMessage = "Notifications are disabled. Enable them in Settings to use reminders."
+            case .error(let error):
+                profile.enableReminders = false
+                syncCoordinator.syncMessage = "Reminder setup failed: \(error.localizedDescription)"
             }
-        } catch {
-            syncCoordinator.syncMessage = "Reminder setup failed: \(error.localizedDescription)"
+            return
         }
+
+        await reminderManager.disableReminder()
     }
 }
 

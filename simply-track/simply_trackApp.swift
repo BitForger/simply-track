@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import SQLite3
 
 // MARK: - Persistence Status Tracking
 /// Tracks the current data persistence mode and any associated errors.
@@ -74,6 +75,9 @@ struct simply_trackApp: App {
 
     private static let appSupportURL = URL.applicationSupportDirectory
     private static let persistentStoreBaseName = "default.store"
+    private static let backupDirectoryName = "StoreBackups"
+    private static let maxRetainedBackups = 3
+    private static let maxBackupAgeDays = 30
 
     private static var persistentStoreURLs: [URL] {
         [
@@ -95,38 +99,109 @@ struct simply_trackApp: App {
         }
     }
 
-    /// Backs up the persistent store asynchronously in the background to avoid blocking app startup.
-    /// This method returns immediately; actual backup happens on a background thread.
-    private static func schedulePersistentStoreBackup() {
-        // Dispatch to a background thread to avoid blocking the main thread.
-        // App initialization can proceed while backups happen in the background.
-        DispatchQueue.global(qos: .background).async {
-            let fileManager = FileManager.default
-            let backupDirectory = appSupportURL.appendingPathComponent("StoreBackups", isDirectory: true)
+    /// Creates a transactionally consistent SQLite snapshot and prunes old backups.
+    /// This should only be invoked for major events (e.g. store recovery paths), not every launch.
+    private static func backupPersistentStoreIfPresent(reason: String) {
+        let fileManager = FileManager.default
+        let primaryStoreURL = appSupportURL.appendingPathComponent(persistentStoreBaseName)
+        guard fileManager.fileExists(atPath: primaryStoreURL.path) else { return }
 
-            do {
-                try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
-            } catch {
-                print("Warning: Could not create store backup directory: \(error)")
-                return
+        let backupDirectory = appSupportURL.appendingPathComponent(backupDirectoryName, isDirectory: true)
+
+        do {
+            try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+            try pruneBackups(in: backupDirectory, fileManager: fileManager)
+
+            let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let backupName = "\(persistentStoreBaseName).\(reason).\(timestamp).sqlite"
+            let backupURL = backupDirectory.appendingPathComponent(backupName)
+
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try fileManager.removeItem(at: backupURL)
             }
 
-            let timestamp = Int(Date().timeIntervalSince1970)
-            for storeURL in persistentStoreURLs where fileManager.fileExists(atPath: storeURL.path) {
-                let backupName = "\(storeURL.lastPathComponent).\(timestamp).backup"
-                let backupURL = backupDirectory.appendingPathComponent(backupName)
+            try createSQLiteSnapshot(from: primaryStoreURL, to: backupURL)
+            try pruneBackups(in: backupDirectory, fileManager: fileManager)
+            print("INFO: Created persistent store backup: \(backupName)")
+        } catch {
+            print("Warning: Could not create persistent store backup (\(reason)): \(error)")
+        }
+    }
 
-                do {
-                    if fileManager.fileExists(atPath: backupURL.path) {
-                        try fileManager.removeItem(at: backupURL)
-                    }
-                    try fileManager.copyItem(at: storeURL, to: backupURL)
-                    print("INFO: Successfully backed up \(storeURL.lastPathComponent)")
-                } catch {
-                    print("Warning: Could not back up store file \(storeURL.lastPathComponent): \(error)")
-                }
+    private static func createSQLiteSnapshot(from sourceURL: URL, to destinationURL: URL) throws {
+        var sourceDB: OpaquePointer?
+        var destinationDB: OpaquePointer?
+
+        let sourceOpenResult = sqlite3_open_v2(sourceURL.path, &sourceDB, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
+        guard sourceOpenResult == SQLITE_OK, let sourceDB else {
+            throw sqliteError(resultCode: sourceOpenResult, database: sourceDB, context: "opening source store")
+        }
+        defer { sqlite3_close(sourceDB) }
+
+        let destinationOpenResult = sqlite3_open_v2(destinationURL.path, &destinationDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
+        guard destinationOpenResult == SQLITE_OK, let destinationDB else {
+            throw sqliteError(resultCode: destinationOpenResult, database: destinationDB, context: "opening backup destination")
+        }
+        defer { sqlite3_close(destinationDB) }
+
+        guard let backupHandle = sqlite3_backup_init(destinationDB, "main", sourceDB, "main") else {
+            throw sqliteError(resultCode: sqlite3_errcode(destinationDB), database: destinationDB, context: "initializing sqlite backup")
+        }
+        defer { sqlite3_backup_finish(backupHandle) }
+
+        let stepResult = sqlite3_backup_step(backupHandle, -1)
+        guard stepResult == SQLITE_DONE else {
+            throw sqliteError(resultCode: stepResult, database: destinationDB, context: "copying sqlite backup")
+        }
+    }
+
+    private static func pruneBackups(in backupDirectory: URL, fileManager: FileManager) throws {
+        let backupURLs = try fileManager.contentsOfDirectory(
+            at: backupDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        let now = Date()
+        let maxAgeInterval = TimeInterval(maxBackupAgeDays * 24 * 60 * 60)
+
+        // Remove backups older than the age cap first.
+        for backupURL in backupURLs {
+            let values = try backupURL.resourceValues(forKeys: [.contentModificationDateKey])
+            let modifiedDate = values.contentModificationDate ?? .distantPast
+            if now.timeIntervalSince(modifiedDate) > maxAgeInterval {
+                try fileManager.removeItem(at: backupURL)
             }
         }
+
+        // Re-list after age pruning, then enforce max count by deleting oldest first.
+        var retained = try fileManager.contentsOfDirectory(
+            at: backupDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        retained.sort {
+            let lhsDate = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let rhsDate = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return lhsDate < rhsDate
+        }
+
+        if retained.count > maxRetainedBackups {
+            let overflowCount = retained.count - maxRetainedBackups
+            for url in retained.prefix(overflowCount) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+    }
+
+    private static func sqliteError(resultCode: Int32, database: OpaquePointer?, context: String) -> NSError {
+        let message = database.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown SQLite error"
+        return NSError(
+            domain: "SimplyTrack.SQLiteBackup",
+            code: Int(resultCode),
+            userInfo: [NSLocalizedDescriptionKey: "\(context): \(message)"]
+        )
     }
 
     /// Removes SQLite sidecar files that can prevent a healthy local store from opening after a failed launch.
@@ -146,15 +221,13 @@ struct simply_trackApp: App {
 
     /// Detects if an error is due to CloudKit storage quota being exceeded.
     private static func isCloudKitQuotaError(_ error: Error) -> Bool {
-        if let nsError = error as? NSError {
-            // CloudKit error codes: https://developer.apple.com/documentation/cloudkit/ckerrorcode
-            // 5 = quotaExceeded (within a specific operation)
-            // 10 = limitExceeded (general quota exceeded)
-            let isQuotaCode = nsError.code == 5 || nsError.code == 10
-            let isCloudKitDomain = nsError.domain == "CKErrorDomain" || nsError.domain == "com.apple.cloudkit.error"
-            return isQuotaCode && isCloudKitDomain
-        }
-        return false
+        let nsError = error as NSError
+        // CloudKit error codes: https://developer.apple.com/documentation/cloudkit/ckerrorcode
+        // 5 = quotaExceeded (within a specific operation)
+        // 10 = limitExceeded (general quota exceeded)
+        let isQuotaCode = nsError.code == 5 || nsError.code == 10
+        let isCloudKitDomain = nsError.domain == "CKErrorDomain" || nsError.domain == "com.apple.cloudkit.error"
+        return isQuotaCode && isCloudKitDomain
     }
 
     /// Creates and returns a ModelContainer, updating persistenceStatus on fallback.
@@ -184,7 +257,6 @@ struct simply_trackApp: App {
             persistenceStatus.error = nil
             persistenceStatus.isCloudKitQuotaError = false
             print("INFO: Successfully initialized CloudKit-backed store")
-            Self.schedulePersistentStoreBackup()
             return container
         } catch {
             // Detect if this is a storage quota error
@@ -210,10 +282,12 @@ struct simply_trackApp: App {
             )
             persistenceStatus.mode = .localOnly
             print("INFO: Successfully initialized local-only persistent store")
-            Self.schedulePersistentStoreBackup()
             return container
         } catch {
             print("ERROR: Failed to open local persistent SwiftData store: \(error)")
+
+            print("INFO: Capturing store backup before local recovery cleanup")
+            Self.backupPersistentStoreIfPresent(reason: "pre-recovery")
 
             print("INFO: Attempting to recover local store by clearing stale SQLite sidecar files")
             Self.removePersistentStoreSidecars()
@@ -228,7 +302,6 @@ struct simply_trackApp: App {
                 persistenceStatus.error = nil
                 persistenceStatus.isCloudKitQuotaError = false
                 print("INFO: Successfully recovered local-only persistent store after cleanup")
-                Self.schedulePersistentStoreBackup()
                 return recoveredContainer
             } catch {
                 print("ERROR: Local persistent store recovery failed: \(error)")

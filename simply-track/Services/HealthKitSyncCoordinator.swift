@@ -17,16 +17,29 @@ final class HealthKitSyncCoordinator: ObservableObject {
     private static let hasHealthKitAccessKey = "hasHealthKitAccess"
 
     init() {
-        hasHealthKitAccess = UserDefaults.standard.bool(forKey: Self.hasHealthKitAccessKey)
+        let persisted = UserDefaults.standard.bool(forKey: Self.hasHealthKitAccessKey)
+        let liveStatus = healthKitService.hasCurrentAuthorization()
+        hasHealthKitAccess = liveStatus
+
+        if persisted != liveStatus {
+            UserDefaults.standard.set(liveStatus, forKey: Self.hasHealthKitAccessKey)
+        }
+    }
+
+    func refreshAuthorizationStatus() {
+        let liveStatus = healthKitService.hasCurrentAuthorization()
+        hasHealthKitAccess = liveStatus
+        UserDefaults.standard.set(liveStatus, forKey: Self.hasHealthKitAccessKey)
     }
 
     func requestAuthorization() async {
         do {
             try await healthKitService.requestAuthorization()
-            hasHealthKitAccess = true
-            UserDefaults.standard.set(true, forKey: Self.hasHealthKitAccessKey)
+            refreshAuthorizationStatus()
             syncMessage = "HealthKit access granted."
         } catch {
+            hasHealthKitAccess = false
+            UserDefaults.standard.set(false, forKey: Self.hasHealthKitAccessKey)
             syncMessage = "HealthKit authorization failed: \(error.localizedDescription)"
         }
     }

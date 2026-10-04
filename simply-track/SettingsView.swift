@@ -7,6 +7,9 @@
 
 import SwiftUI
 import SwiftData
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(WebKit)
 import WebKit
 #endif
@@ -22,7 +25,10 @@ struct SettingsView: View {
     @State private var isLoadingHealthImportCandidates = false
     @State private var healthImportStatusMessage: String?
     @State private var healthImportCandidates: [HealthImportCandidate] = []
+    @State private var isUpdatingReminderPreference = false
+    @State private var reminderPermissionMessage: String?
     private let healthKitService = HealthKitService()
+    private let reminderManager = ReminderManager()
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
     let hasHealthKitAccess: Bool
@@ -143,8 +149,22 @@ struct SettingsView: View {
                 ))
                 Toggle("Enable reminders", isOn: Binding(
                     get: { profile.enableReminders },
-                    set: { profile.enableReminders = $0 }
+                    set: { newValue in
+                        Task {
+                            await updateReminderPreference(enabled: newValue)
+                        }
+                    }
                 ))
+                if let reminderPermissionMessage {
+                    Text(reminderPermissionMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Open Notification Settings") {
+                        openNotificationSettings()
+                    }
+                    .font(.caption)
+                }
                 if !hasHealthKitAccess {
                     Button("Request HealthKit Access") {
                         Task { await onRequestHealthKit() }
@@ -553,6 +573,43 @@ struct SettingsView: View {
             print("Warning: Failed to save profile changes: \(error)")
             // App continues; SwiftData will attempt to save on next opportunity
         }
+    }
+
+    @MainActor
+    private func updateReminderPreference(enabled: Bool) async {
+        guard !isUpdatingReminderPreference else { return }
+        isUpdatingReminderPreference = true
+        defer { isUpdatingReminderPreference = false }
+
+        if !enabled {
+            profile.enableReminders = false
+            reminderPermissionMessage = nil
+            await reminderManager.disableReminder()
+            commitProfileChanges()
+            return
+        }
+
+        let status = await reminderManager.enableDefaultReminder()
+        switch status {
+        case .scheduled:
+            profile.enableReminders = true
+            reminderPermissionMessage = nil
+        case .denied:
+            profile.enableReminders = false
+            reminderPermissionMessage = "Notifications are off. Turn them on in Settings to enable reminders."
+        case .error(let error):
+            profile.enableReminders = false
+            reminderPermissionMessage = "Reminder setup failed: \(error.localizedDescription)"
+        }
+
+        commitProfileChanges()
+    }
+
+    private func openNotificationSettings() {
+#if canImport(UIKit)
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(settingsURL)
+#endif
     }
 
     private func deletePersonalCatalogItems(offsets: IndexSet) {

@@ -9,12 +9,24 @@ import Foundation
 import UserNotifications
 
 actor ReminderManager {
+    enum EnableDefaultReminderStatus {
+        case scheduled
+        case denied
+        case error(Error)
+    }
+
     private let reminderIdentifier = "daily-calorie-log-reminder"
 
-    func enableDefaultReminder() async throws {
+    func enableDefaultReminder() async -> EnableDefaultReminderStatus {
         let center = UNUserNotificationCenter.current()
-        let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
-        guard granted else { return }
+        let granted: Bool
+        do {
+            granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+        } catch {
+            return .error(error)
+        }
+
+        guard granted else { return .denied }
 
         let content = UNMutableNotificationContent()
         content.title = "Log your calories"
@@ -29,7 +41,12 @@ actor ReminderManager {
         let request = UNNotificationRequest(identifier: reminderIdentifier, content: content, trigger: trigger)
 
         center.removePendingNotificationRequests(withIdentifiers: [reminderIdentifier])
-        try await center.add(request)
+        do {
+            try await center.add(request)
+            return .scheduled
+        } catch {
+            return .error(error)
+        }
     }
 
     func disableReminder() {
