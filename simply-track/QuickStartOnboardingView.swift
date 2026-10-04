@@ -4,10 +4,12 @@ struct QuickStartOnboardingView: View {
     @Binding var useHealthSync: Bool
     @Binding var enableReminders: Bool
 
-    let onRequestHealthKit: () async -> Void
+    let onRequestHealthKit: () async -> Bool
     let onComplete: () -> Void
 
     @State private var step = 0
+    @State private var isRequestingHealthKit = false
+    @State private var healthKitRequestMessage: String?
 
     var body: some View {
         VStack(spacing: 20) {
@@ -29,11 +31,17 @@ struct QuickStartOnboardingView: View {
                 }
             }
 
+            if let healthKitRequestMessage {
+                Text(healthKitRequestMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Button("Back") {
                     step = max(0, step - 1)
                 }
-                .disabled(step == 0)
+                .disabled(step == 0 || isRequestingHealthKit)
 
                 Spacer()
 
@@ -45,6 +53,7 @@ struct QuickStartOnboardingView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isRequestingHealthKit)
             }
             .padding(.top, 8)
         }
@@ -67,12 +76,20 @@ struct QuickStartOnboardingView: View {
                 .font(.title3.weight(.semibold))
             Text("The app reads latest calorie data from Apple Health before syncing, then writes updates.")
                 .foregroundStyle(.secondary)
-            Button("Allow Health Access") {
+            Button(isRequestingHealthKit ? "Requesting…" : "Allow Health Access") {
                 Task {
-                    await onRequestHealthKit()
+                    isRequestingHealthKit = true
+                    defer { isRequestingHealthKit = false }
+
+                    let granted = await onRequestHealthKit()
+                    useHealthSync = granted
+                    healthKitRequestMessage = granted
+                        ? "Health access granted. You can continue to the next step."
+                        : "Health access wasn't granted. You can continue without Health sync."
                 }
             }
             .buttonStyle(.borderedProminent)
+            .disabled(isRequestingHealthKit)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

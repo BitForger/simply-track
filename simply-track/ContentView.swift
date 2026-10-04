@@ -205,15 +205,22 @@ struct ContentView: View {
         )
     }
 
-    private func authorizeAndSyncHealthKit() async {
+    private func authorizeAndSyncHealthKit() async -> Bool {
         guard profile.useHealthSync else {
             syncCoordinator.syncMessage = "Enable Health sync in Settings before requesting HealthKit access."
-            return
+            return false
         }
 
         await syncCoordinator.requestAuthorization()
+        guard syncCoordinator.hasHealthKitAccess else {
+            profile.useHealthSync = false
+            syncCoordinator.syncMessage = "HealthKit access wasn't granted. Health sync has been turned off."
+            return false
+        }
+
         await refreshFromHealthKit()
         await syncAllEntriesWithHealthKit()
+        return true
     }
 
     @MainActor private func addEntry(_ payload: AddFoodEntryPayload) {
