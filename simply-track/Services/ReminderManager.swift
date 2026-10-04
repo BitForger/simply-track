@@ -9,15 +9,21 @@ import Foundation
 import UserNotifications
 
 actor ReminderManager {
-    enum EnableDefaultReminderStatus {
+    enum ReminderUpdateStatus {
         case scheduled
+        case disabled
         case denied
         case error(Error)
     }
 
     private let reminderIdentifier = "daily-calorie-log-reminder"
 
-    func enableDefaultReminder() async -> EnableDefaultReminderStatus {
+    func updateReminderSchedule(enabled: Bool) async -> ReminderUpdateStatus {
+        guard enabled else {
+            disableReminder()
+            return .disabled
+        }
+
         let center = UNUserNotificationCenter.current()
         let granted: Bool
         do {
@@ -49,7 +55,7 @@ actor ReminderManager {
         }
     }
 
-    func disableReminder() {
+    private func disableReminder() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reminderIdentifier])
     }
 }

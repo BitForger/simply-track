@@ -619,18 +619,13 @@ struct SettingsView: View {
         isUpdatingReminderPreference = true
         defer { isUpdatingReminderPreference = false }
 
-        if !enabled {
-            profile.enableReminders = false
-            reminderPermissionMessage = nil
-            await reminderManager.disableReminder()
-            commitProfileChangesImmediately()
-            return
-        }
-
-        let status = await reminderManager.enableDefaultReminder()
+        let status = await reminderManager.updateReminderSchedule(enabled: enabled)
         switch status {
         case .scheduled:
             profile.enableReminders = true
+            reminderPermissionMessage = nil
+        case .disabled:
+            profile.enableReminders = false
             reminderPermissionMessage = nil
         case .denied:
             profile.enableReminders = false
