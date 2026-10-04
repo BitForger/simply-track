@@ -19,8 +19,23 @@ struct SettingsView: View {
     @Query(sort: \FoodEntry.consumedAt, order: .reverse) private var entries: [FoodEntry]
 
     @State private var showingHealthImportSheet = false
+    @State private var isLoadingHealthImportCandidates = false
+    @State private var healthImportStatusMessage: String?
+    @State private var healthImportCandidates: [HealthImportCandidate] = []
+    private let healthKitService = HealthKitService()
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
+    let hasHealthKitAccess: Bool
+
+    init(
+        onOpenQuickStart: @escaping () -> Void,
+        onRequestHealthKit: @escaping () async -> Void,
+        hasHealthKitAccess: Bool
+    ) {
+        self.onOpenQuickStart = onOpenQuickStart
+        self.onRequestHealthKit = onRequestHealthKit
+        self.hasHealthKitAccess = hasHealthKitAccess
+    }
 
     private var profile: UserProfile {
         if let existing = profiles.first {
@@ -95,12 +110,12 @@ struct SettingsView: View {
         foodCatalog.filter { $0.isUserAdded }
     }
 
-    private var healthImportCandidates: [HealthImportCandidate] {
+    private var localHealthImportCandidates: [HealthImportCandidate] {
         let healthKitEntries = entries.filter { $0.source == "healthKit" }
         var latestByName: [String: FoodEntry] = [:]
 
         for entry in healthKitEntries {
-            let key = entry.foodName.lowercased()
+            let key = normalizedHealthImportKey(entry.foodName)
             if let existing = latestByName[key], existing.consumedAt >= entry.consumedAt {
                 continue
             }
@@ -115,6 +130,10 @@ struct SettingsView: View {
             .sorted { $0.name < $1.name }
     }
 
+    private var canImportFoodsFromHealth: Bool {
+        hasHealthKitAccess && !isLoadingHealthImportCandidates
+    }
+
     var body: some View {
         Form {
             Section("Privacy & Sync") {
@@ -126,13 +145,19 @@ struct SettingsView: View {
                     get: { profile.enableReminders },
                     set: { profile.enableReminders = $0 }
                 ))
-                Button("Request HealthKit Access") {
-                    Task { await onRequestHealthKit() }
+                if !hasHealthKitAccess {
+                    Button("Request HealthKit Access") {
+                        Task { await onRequestHealthKit() }
+                    }
+                    .disabled(!profile.useHealthSync)
                 }
-                .disabled(!profile.useHealthSync)
 
                 if !profile.useHealthSync {
                     Text("Turn on Health sync to request and use HealthKit access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if hasHealthKitAccess {
+                    Text("HealthKit access is enabled.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -356,10 +381,26 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button("Import Foods from Health") {
-                    showingHealthImportSheet = true
+                Button {
+                    Task {
+                        await loadHealthImportCandidates()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isLoadingHealthImportCandidates {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(isLoadingHealthImportCandidates ? "Loading Health foods…" : "Import Foods from Health")
+                    }
                 }
-                .disabled(healthImportCandidates.isEmpty)
+                .disabled(!canImportFoodsFromHealth)
+
+                if let healthImportStatusMessage {
+                    Text(healthImportStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if personalCatalog.isEmpty {
                     Text("No personal foods yet.")
@@ -521,6 +562,72 @@ struct SettingsView: View {
         }
     }
 
+    @MainActor private func loadHealthImportCandidates() async {
+        guard hasHealthKitAccess else {
+            healthImportStatusMessage = "Request HealthKit access first."
+            return
+        }
+
+        isLoadingHealthImportCandidates = true
+        healthImportStatusMessage = nil
+
+        defer {
+            isLoadingHealthImportCandidates = false
+        }
+
+        let startDate = Calendar.current.date(byAdding: .year, value: -5, to: .now) ?? .distantPast
+        let fetchedPayloads = await fetchHealthEntries(from: startDate, to: .now)
+        let importedCandidates = makeHealthImportCandidates(from: fetchedPayloads)
+        let fallbackCandidates = importedCandidates.isEmpty ? localHealthImportCandidates : importedCandidates
+
+        healthImportCandidates = fallbackCandidates
+
+        if fallbackCandidates.isEmpty {
+            healthImportStatusMessage = "No importable foods were found in Health."
+            showingHealthImportSheet = false
+        } else {
+            healthImportStatusMessage = importedCandidates.isEmpty
+                ? "Loaded previously synced Health entries."
+                : nil
+            showingHealthImportSheet = true
+        }
+    }
+
+    private func fetchHealthEntries(from startDate: Date, to endDate: Date) async -> [CalorieEntryPayload] {
+        do {
+            return try await healthKitService.fetchEntries(from: startDate, to: endDate)
+        } catch {
+            return []
+        }
+    }
+
+    private func makeHealthImportCandidates(from payloads: [CalorieEntryPayload]) -> [HealthImportCandidate] {
+        var latestByName: [String: CalorieEntryPayload] = [:]
+
+        for payload in payloads {
+            let key = normalizedHealthImportKey(payload.foodName)
+            guard !key.isEmpty else { continue }
+
+            if let existing = latestByName[key], existing.consumedAt >= payload.consumedAt {
+                continue
+            }
+            latestByName[key] = payload
+        }
+
+        return latestByName.values
+            .filter { entry in
+                !foodCatalog.contains { existing in
+                    normalizedHealthImportKey(existing.name) == normalizedHealthImportKey(entry.foodName)
+                }
+            }
+            .map { HealthImportCandidate(name: $0.foodName, amountDescription: $0.amountDescription, calories: $0.calories) }
+            .sorted { $0.name < $1.name }
+    }
+
+    private func normalizedHealthImportKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     private func importCatalogItems(_ candidates: [HealthImportCandidate]) {
         for candidate in candidates {
             modelContext.insert(
@@ -556,7 +663,8 @@ struct SettingsView: View {
     NavigationStack {
         SettingsView(
             onOpenQuickStart: {},
-            onRequestHealthKit: {}
+                onRequestHealthKit: {},
+                hasHealthKitAccess: false
         )
     }
     .modelContainer(for: [UserProfile.self], inMemory: true)

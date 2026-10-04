@@ -11,11 +11,20 @@ import Combine
 @MainActor
 final class HealthKitSyncCoordinator: ObservableObject {
     @Published var syncMessage = ""
+    @Published var hasHealthKitAccess: Bool
     private let healthKitService = HealthKitService()
+
+    private static let hasHealthKitAccessKey = "hasHealthKitAccess"
+
+    init() {
+        hasHealthKitAccess = UserDefaults.standard.bool(forKey: Self.hasHealthKitAccessKey)
+    }
 
     func requestAuthorization() async {
         do {
             try await healthKitService.requestAuthorization()
+            hasHealthKitAccess = true
+            UserDefaults.standard.set(true, forKey: Self.hasHealthKitAccessKey)
             syncMessage = "HealthKit access granted."
         } catch {
             syncMessage = "HealthKit authorization failed: \(error.localizedDescription)"

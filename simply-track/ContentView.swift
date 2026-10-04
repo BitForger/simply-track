@@ -69,7 +69,8 @@ struct ContentView: View {
                     onOpenQuickStart: { showingQuickStartSheet = true },
                     onRequestHealthKit: {
                         await authorizeAndSyncHealthKit()
-                    }
+                    },
+                    hasHealthKitAccess: syncCoordinator.hasHealthKitAccess
                 )
             }
             .tabItem {
