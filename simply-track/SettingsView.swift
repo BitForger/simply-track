@@ -520,6 +520,8 @@ struct SettingsView: View {
         .onChange(of: profile.autoSaveToCatalog) { _, _ in scheduleDebouncedProfileSave() }
         .alert("Couldn't Save Settings", isPresented: $showingSaveErrorAlert) {
             Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "An unknown error occurred while saving your settings.")
         }
         .navigationTitle("Settings")
         
