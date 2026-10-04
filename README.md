@@ -37,17 +37,27 @@ When the app launches for the first time, it creates a default profile and seeds
 
 ```text
 simply-track/
-├── ContentView.swift      # Main app UI, home dashboard, logging, sync
-├── Item.swift             # SwiftData models, HealthKitSyncCoordinator, CalorieSummaryCalculator
-├── SettingsView.swift     # Profile metrics, app settings, burn-adjust toggle
-├── simply_trackApp.swift  # App entry point, model container with schema migration
-└── Assets.xcassets        # App icons and asset catalog
+├── ContentView.swift              # Main app UI, orchestration, onboarding, sync
+├── HomeDashboardView.swift        # Dashboard sections and calorie summaries
+├── LogEntriesView.swift           # Manual entry list, edit/delete, Health app links
+├── SettingsView.swift             # Profile metrics, targets, catalog, reminders
+├── TDEEEquationSettingsView.swift # BMR/TDEE equation selection and lean body mass
+├── Services/
+│   ├── CalorieSummaryCalculator.swift
+│   ├── HealthKitService.swift
+│   ├── HealthKitSyncCoordinator.swift
+│   ├── ReminderManager.swift
+│   └── StreakCalculator.swift
+├── Models/
+│   └── Schemas/                   # SwiftData versioned schemas and migrations
+├── simply_trackApp.swift          # App entry point, model container, recovery logic
+└── Assets.xcassets                # App icons and asset catalog
 ```
 
 **Key Components:**
 - **HealthKitSyncCoordinator** — Service for HealthKit authorization, syncing, and active calorie queries
 - **CalorieSummaryCalculator** — Static helper for daily/weekly intake aggregation with fixed week boundaries
-- **UserProfile** — Persistent user data with BMR/TDEE calculations (schema-versioned in V2)
+- **UserProfile** — Persistent user data with BMR/TDEE calculations (schema-versioned in V7)
 - **FoodEntry & FoodCatalogItem** — SwiftData models for food tracking
 
 ## Data and Sync Notes
@@ -57,7 +67,7 @@ simply-track/
 - Active calorie burn adjustment can be toggled in Settings ("Adjust max with active calories burned").
 - Reminder notifications are optional and can be toggled in Settings.
 - The app includes a recovery path for incompatible or corrupted SwiftData stores.
-- On app launch, the app ensures required directories exist and performs schema migrations if needed (lightweight V1→V2 migration).
+- On app launch, the app ensures required directories exist and performs schema migrations if needed (V1→V7, including a custom V6→V7 deduplication step).
 
 ## Architecture
 

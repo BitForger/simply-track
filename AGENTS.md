@@ -12,10 +12,17 @@ Source files are organized by responsibility under `simply-track/`:
 
 ```
 simply-track/
-├── ContentView.swift              # Main dashboard + HealthKitSyncCoordinator, HealthKitService
+├── ContentView.swift              # Main dashboard + onboarding, sync, persistence orchestration
+├── HomeDashboardView.swift        # Dashboard cards and calorie summaries
 ├── LogEntriesView.swift           # Log tab (today/yesterday entries, edit/delete)
-├── SettingsView.swift             # Settings tab (profile, targets, catalog)
-├── simply_trackApp.swift          # App entry point, ModelContainer setup
+├── SettingsView.swift             # Settings tab (profile, targets, catalog, reminders)
+├── TDEEEquationSettingsView.swift # Settings sub-screen: pick BMR/TDEE equation, enter/fetch lean body mass
+├── Services/
+│   ├── CalorieSummaryCalculator.swift
+│   ├── HealthKitService.swift
+│   ├── HealthKitSyncCoordinator.swift
+│   ├── ReminderManager.swift
+│   └── StreakCalculator.swift
 ├── Models/
 │   ├── BiologicalSex.swift
 │   ├── NutritionGoal.swift
@@ -27,14 +34,14 @@ simply-track/
 │       ├── SimplyTrackSchemaV1.swift
 │       ├── SimplyTrackSchemaV2.swift
 │       ├── SimplyTrackSchemaV3.swift
-│       ├── SimplyTrackSchemaV4.swift       # Active schema (adds tdeeEquationRawValue, leanBodyMassKg)
+│       ├── SimplyTrackSchemaV4.swift
+│       ├── SimplyTrackSchemaV5.swift
+│       ├── SimplyTrackSchemaV6.swift
+│       ├── SimplyTrackSchemaV7.swift       # Active schema
 │       └── SimplyTrackMigrationPlan.swift  # Migration stages + FoodEntry/FoodCatalogItem/UserProfile typealiases
-├── Services/
-│   ├── CalorieSummaryCalculator.swift
-│   └── StreakCalculator.swift
 ├── Extensions/
 │   └── Calendar+GregorianSundayStart.swift
-└── TDEEEquationSettingsView.swift  # Settings sub-screen: pick BMR/TDEE equation, enter/fetch lean body mass
+└── simply_trackApp.swift  # App entry point, ModelContainer setup and recovery
 ```
 
 ## Core Services
@@ -300,5 +307,5 @@ section is populated on every launch, even if the app wasn't opened the day befo
 
 ---
 
-**Last Updated:** September 2026
-**Current Schema Version:** 4.0.0
+**Last Updated:** October 2026
+**Current Schema Version:** 7.0.0
