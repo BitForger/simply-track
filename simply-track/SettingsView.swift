@@ -368,7 +368,12 @@ struct SettingsView: View {
                     profile.weeklyCalorieTarget = profile.recommendedWeeklyTarget()
                     dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
                     weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
-                    commitProfileChanges()
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        saveErrorMessage = error.localizedDescription
+                        showingSaveErrorAlert = true
+                    }
                 }
 
                 LabeledContent("Daily target") {
@@ -512,8 +517,6 @@ struct SettingsView: View {
         .onChange(of: profile.autoSaveToCatalog) { _, _ in scheduleDebouncedProfileSave() }
         .alert("Couldn't Save Settings", isPresented: $showingSaveErrorAlert) {
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(saveErrorMessage ?? "Please try again.")
         }
         .navigationTitle("Settings")
         

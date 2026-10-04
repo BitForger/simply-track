@@ -218,6 +218,9 @@ struct EditableFoodEntryValues {
 }
 
 private struct EditFoodEntrySheet: View {
+    private static let minCaloriesPerEntry = 1.0
+    private static let maxCaloriesPerEntry = 10000.0
+
     @Environment(\.dismiss) private var dismiss
 
     let entry: FoodEntry
@@ -246,6 +249,11 @@ private struct EditFoodEntrySheet: View {
 #if os(iOS)
                     .keyboardType(.decimalPad)
 #endif
+                if let caloriesValidationMessage {
+                    Text(caloriesValidationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
                 DatePicker("Time", selection: $consumedAt)
             }
             .navigationTitle("Edit Entry")
@@ -266,13 +274,30 @@ private struct EditFoodEntrySheet: View {
     }
 
     private var isFormValid: Bool {
-        !foodName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let calories = parsedCalories else { return false }
+        return !foodName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !amountDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && Double(caloriesText) != nil
+            && calories >= Self.minCaloriesPerEntry
+            && calories <= Self.maxCaloriesPerEntry
+    }
+
+    private var parsedCalories: Double? {
+        Double(caloriesText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private var caloriesValidationMessage: String? {
+        let trimmed = caloriesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let calories = parsedCalories else { return "Enter a numeric calorie value." }
+        guard calories >= Self.minCaloriesPerEntry else { return "Calories must be greater than zero." }
+        guard calories <= Self.maxCaloriesPerEntry else { return "Calories must be \(Int(Self.maxCaloriesPerEntry)) or less." }
+        return nil
     }
 
     private func save() {
-        guard let calories = Double(caloriesText) else { return }
+        guard let calories = parsedCalories,
+              calories >= Self.minCaloriesPerEntry,
+              calories <= Self.maxCaloriesPerEntry else { return }
         onSave(
             EditableFoodEntryValues(
                 foodName: foodName.trimmingCharacters(in: .whitespacesAndNewlines),
