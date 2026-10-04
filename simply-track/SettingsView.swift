@@ -404,56 +404,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Personal Foods") {
-                Toggle("Auto-save manual entries", isOn: Binding(
-                    get: { profile.autoSaveToCatalog },
-                    set: { profile.autoSaveToCatalog = $0 }
-                ))
-                Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    Task {
-                        await loadHealthImportCandidates()
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if isLoadingHealthImportCandidates {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(isLoadingHealthImportCandidates ? "Loading Health foods…" : "Import Foods from Health")
-                    }
-                }
-                .disabled(!canImportFoodsFromHealth)
-
-                if let healthImportStatusMessage {
-                    Text(healthImportStatusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if personalCatalog.isEmpty {
-                    Text("No personal foods yet.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(personalCatalog) { item in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(item.name)
-                                Text(item.defaultAmountDescription)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text("\(Int(item.caloriesPerDefaultAmount)) cal")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .onDelete(perform: deletePersonalCatalogItems)
-                }
-            }
+            personalFoodsSection
 
             Button("Support the developer", systemImage: "heart") {
                 if let url = URL(string: "https://ko-fi.com/bitforger") {
@@ -525,6 +476,59 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         
+    }
+
+    private var personalFoodsSection: some View {
+        Section("Personal Foods") {
+            Toggle("Auto-save manual entries", isOn: Binding(
+                get: { profile.autoSaveToCatalog },
+                set: { profile.autoSaveToCatalog = $0 }
+            ))
+            Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button {
+                Task {
+                    await loadHealthImportCandidates()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isLoadingHealthImportCandidates {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(isLoadingHealthImportCandidates ? "Loading Health foods…" : "Import Foods from Health")
+                }
+            }
+            .disabled(!canImportFoodsFromHealth)
+
+            if let healthImportStatusMessage {
+                Text(healthImportStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if personalCatalog.isEmpty {
+                Text("No personal foods yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(personalCatalog) { item in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(item.name)
+                            Text(item.defaultAmountDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(Int(item.caloriesPerDefaultAmount)) cal")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onDelete(perform: deletePersonalCatalogItems)
+            }
+        }
     }
 
     private enum ExpandedPickerField {
