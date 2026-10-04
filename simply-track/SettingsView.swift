@@ -27,8 +27,12 @@ struct SettingsView: View {
     @State private var healthImportCandidates: [HealthImportCandidate] = []
     @State private var isUpdatingReminderPreference = false
     @State private var reminderPermissionMessage: String?
+    @State private var pendingSaveTask: Task<Void, Never>?
+    @State private var showingSaveErrorAlert = false
+    @State private var saveErrorMessage: String?
     private let healthKitService = HealthKitService()
     private let reminderManager = ReminderManager()
+    private let saveDebounceNanoseconds: UInt64 = 350_000_000
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
     let hasHealthKitAccess: Bool
@@ -471,6 +475,9 @@ struct SettingsView: View {
             dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
             weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
         }
+        .onDisappear {
+            flushPendingProfileSave()
+        }
         .onChange(of: focusedTargetField) { oldValue, newValue in
             if oldValue != nil && newValue == nil {
                 commitTargetFieldEdits()
@@ -492,17 +499,22 @@ struct SettingsView: View {
                 weeklyTargetInput = formattedCalories(newValue)
             }
         }
-        .onChange(of: profile.age) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.heightCm) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.weightKg) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.activityMultiplier) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.biologicalSex) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.nutritionGoal) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.weightLossPace) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.includeActiveCaloriesInMax) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.useHealthSync) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.enableReminders) { _, _ in commitProfileChanges() }
-        .onChange(of: profile.autoSaveToCatalog) { _, _ in commitProfileChanges() }
+        .onChange(of: profile.age) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.heightCm) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.weightKg) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.activityMultiplier) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.biologicalSex) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.nutritionGoal) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.weightLossPace) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.includeActiveCaloriesInMax) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.useHealthSync) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.enableReminders) { _, _ in scheduleDebouncedProfileSave() }
+        .onChange(of: profile.autoSaveToCatalog) { _, _ in scheduleDebouncedProfileSave() }
+        .alert("Couldn't Save Settings", isPresented: $showingSaveErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "Please try again.")
+        }
         .navigationTitle("Settings")
         
     }
@@ -562,16 +574,36 @@ struct SettingsView: View {
             weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
         }
         
-        // Explicitly save critical profile changes
-        commitProfileChanges()
+        // Explicit save on explicit "Done" action avoids debounce lag for target fields.
+        commitProfileChangesImmediately()
     }
 
-    private func commitProfileChanges() {
+    private func scheduleDebouncedProfileSave() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = Task {
+            try? await Task.sleep(nanoseconds: saveDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                commitProfileChangesImmediately()
+            }
+        }
+    }
+
+    private func flushPendingProfileSave() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
+        commitProfileChangesImmediately()
+    }
+
+    private func commitProfileChangesImmediately() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
         do {
             try modelContext.save()
         } catch {
+            saveErrorMessage = error.localizedDescription
+            showingSaveErrorAlert = true
             print("Warning: Failed to save profile changes: \(error)")
-            // App continues; SwiftData will attempt to save on next opportunity
         }
     }
 
@@ -585,7 +617,7 @@ struct SettingsView: View {
             profile.enableReminders = false
             reminderPermissionMessage = nil
             await reminderManager.disableReminder()
-            commitProfileChanges()
+            commitProfileChangesImmediately()
             return
         }
 
@@ -602,7 +634,7 @@ struct SettingsView: View {
             reminderPermissionMessage = "Reminder setup failed: \(error.localizedDescription)"
         }
 
-        commitProfileChanges()
+        commitProfileChangesImmediately()
     }
 
     private func openNotificationSettings() {
