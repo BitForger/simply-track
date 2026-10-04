@@ -13,8 +13,8 @@ import HealthKit
 final class HealthKitService {
 #if canImport(HealthKit)
     private let store = HKHealthStore()
-    private let dietaryType = HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
-    private let activeEnergyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
+    private let dietaryType = HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)
+    private let activeEnergyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
 #endif
 
     enum ServiceError: LocalizedError {
@@ -24,7 +24,7 @@ final class HealthKitService {
         var errorDescription: String? {
             switch self {
             case .unsupported:
-                return "HealthKit is not available on this platform."
+                return "HealthKit is not available on this platform or required quantity types are unavailable."
             case .authorizationUnavailable:
                 return "HealthKit permissions are unavailable."
             }
@@ -33,8 +33,10 @@ final class HealthKitService {
 
     func requestAuthorization() async throws {
 #if canImport(HealthKit)
-        guard HKHealthStore.isHealthDataAvailable() else {
-            throw ServiceError.authorizationUnavailable
+        guard HKHealthStore.isHealthDataAvailable(),
+              let dietaryType,
+              let activeEnergyType else {
+            throw ServiceError.unsupported
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -55,7 +57,8 @@ final class HealthKitService {
 
     func hasCurrentAuthorization() -> Bool {
 #if canImport(HealthKit)
-        guard HKHealthStore.isHealthDataAvailable() else {
+        guard HKHealthStore.isHealthDataAvailable(),
+              let dietaryType else {
             return false
         }
 
@@ -67,6 +70,10 @@ final class HealthKitService {
 
     func fetchActiveCaloriesBurned(from startDate: Date, to endDate: Date) async throws -> Double {
 #if canImport(HealthKit)
+        guard let activeEnergyType else {
+            throw ServiceError.unsupported
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Double, Error>) in
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
             let query = HKStatisticsQuery(
@@ -91,6 +98,10 @@ final class HealthKitService {
 
     func fetchEntries(from startDate: Date, to endDate: Date) async throws -> [CalorieEntryPayload] {
 #if canImport(HealthKit)
+        guard let dietaryType else {
+            throw ServiceError.unsupported
+        }
+
         let samples = try await fetchSamples(from: startDate, to: endDate)
         return samples.map { sample in
             let metadata = sample.metadata ?? [:]
@@ -136,6 +147,10 @@ final class HealthKitService {
 
     func deleteEntries(_ entries: [CalorieEntryPayload]) async throws {
 #if canImport(HealthKit)
+        guard let dietaryType else {
+            throw ServiceError.unsupported
+        }
+
         let uuids = entries
             .compactMap(\.healthKitSampleIdentifier)
             .compactMap(UUID.init(uuidString:))
@@ -170,7 +185,11 @@ final class HealthKitService {
 
 #if canImport(HealthKit)
     private func fetchSamples(from startDate: Date, to endDate: Date) async throws -> [HKQuantitySample] {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKQuantitySample], Error>) in
+        guard let dietaryType else {
+            throw ServiceError.unsupported
+        }
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKQuantitySample], Error>) in
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
             let sort = [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
             let query = HKSampleQuery(sampleType: dietaryType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: sort) { _, samples, error in
@@ -186,6 +205,10 @@ final class HealthKitService {
     }
 
     private func saveToHealthKit(_ entries: [CalorieEntryPayload]) async throws {
+        guard let dietaryType else {
+            throw ServiceError.unsupported
+        }
+
         try await deleteEntries(entries)
 
         let samples = entries.map { entry in
