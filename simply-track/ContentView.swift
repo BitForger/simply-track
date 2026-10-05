@@ -130,32 +130,7 @@ struct ContentView: View {
     }
 
     private func migrateLegacyPreferencesIntoProfileIfNeeded() {
-        let defaults = UserDefaults.standard
-        let markerKey = "didMigratePreferencesToUserProfileV1"
-
-        guard defaults.bool(forKey: markerKey) == false else {
-            return
-        }
-
-        if let value = defaults.object(forKey: "hasCompletedQuickStart") as? Bool {
-            profile.hasCompletedQuickStart = value
-        }
-        if let value = defaults.object(forKey: "useHealthSync") as? Bool {
-            profile.useHealthSync = value
-        } else if let value = defaults.object(forKey: "useCloudKitSync") as? Bool {
-            profile.useHealthSync = value
-        }
-        if let value = defaults.object(forKey: "enableReminders") as? Bool {
-            profile.enableReminders = value
-        }
-        if let value = defaults.object(forKey: "includeActiveCaloriesInMax") as? Bool {
-            profile.includeActiveCaloriesInMax = value
-        }
-        if let value = defaults.object(forKey: "autoSaveToCatalog") as? Bool {
-            profile.autoSaveToCatalog = value
-        }
-
-        defaults.set(true, forKey: markerKey)
+        LegacyProfilePreferencesMigrationService.migrateIfNeeded(profile: profile)
     }
 
     private var quickStartSheet: some View {
@@ -223,7 +198,9 @@ struct ContentView: View {
             )
         }
 
-        let localSnapshots = deduplicatedSnapshots(entries.map(CalorieEntryPayload.init) + [CalorieEntryPayload(entry)])
+        let localSnapshots = FoodEntryMergeService.deduplicatedLatestByID(
+            entries.map(CalorieEntryPayload.init) + [CalorieEntryPayload(entry)]
+        )
 
         Task {
             await syncEntriesWithHealthKit(localSnapshots)
@@ -266,7 +243,7 @@ struct ContentView: View {
         entry.consumedAt = values.consumedAt
         entry.updatedAt = .now
 
-        let snapshots = deduplicatedSnapshots(entries.map(CalorieEntryPayload.init))
+        let snapshots = FoodEntryMergeService.deduplicatedLatestByID(entries.map(CalorieEntryPayload.init))
         Task {
             await syncEntriesWithHealthKit(snapshots)
         }
@@ -306,7 +283,9 @@ struct ContentView: View {
         let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: todayStart) ?? todayStart
         let payloads = await syncCoordinator.pullLatestEntries(from: startDate, to: .now)
 
-        mergePayloadsIntoEntries(payloads, sourceOverride: "healthKit")
+        FoodEntryMergeService.upsert(payloads, into: entries, sourceOverride: "healthKit") { newEntry in
+            modelContext.insert(newEntry)
+        }
 
         if profile.includeActiveCaloriesInMax {
             await refreshActiveCaloriesBurned()
@@ -360,59 +339,9 @@ struct ContentView: View {
         guard profile.useHealthSync else { return }
         let mergedPayloads = await syncCoordinator.sync(localEntries: snapshots)
 
-        mergePayloadsIntoEntries(mergedPayloads)
-    }
-
-    private func mergePayloadsIntoEntries(_ payloads: [CalorieEntryPayload], sourceOverride: String? = nil) {
-        for payload in payloads {
-            if let existing = existingEntry(matching: payload) {
-                apply(payload: payload, to: existing, sourceOverride: sourceOverride)
-            } else {
-                modelContext.insert(makeEntry(from: payload, sourceOverride: sourceOverride))
-            }
+        FoodEntryMergeService.upsert(mergedPayloads, into: entries) { newEntry in
+            modelContext.insert(newEntry)
         }
-    }
-
-    private func existingEntry(matching payload: CalorieEntryPayload) -> FoodEntry? {
-        entries.first {
-            $0.id == payload.id || $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier
-        }
-    }
-
-    private func apply(payload: CalorieEntryPayload, to entry: FoodEntry, sourceOverride: String?) {
-        guard payload.updatedAt >= entry.updatedAt else { return }
-        entry.foodName = payload.foodName
-        entry.amountDescription = payload.amountDescription
-        entry.calories = payload.calories
-        entry.consumedAt = payload.consumedAt
-        entry.updatedAt = payload.updatedAt
-        entry.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
-        entry.source = sourceOverride ?? payload.source
-    }
-
-    private func makeEntry(from payload: CalorieEntryPayload, sourceOverride: String?) -> FoodEntry {
-        FoodEntry(
-            id: payload.id,
-            foodName: payload.foodName,
-            amountDescription: payload.amountDescription,
-            calories: payload.calories,
-            consumedAt: payload.consumedAt,
-            updatedAt: payload.updatedAt,
-            source: sourceOverride ?? payload.source,
-            healthKitSampleIdentifier: payload.healthKitSampleIdentifier
-        )
-    }
-
-    private func deduplicatedSnapshots(_ snapshots: [CalorieEntryPayload]) -> [CalorieEntryPayload] {
-        var byID: [UUID: CalorieEntryPayload] = [:]
-        for snapshot in snapshots {
-            if let existing = byID[snapshot.id] {
-                byID[snapshot.id] = snapshot.updatedAt >= existing.updatedAt ? snapshot : existing
-            } else {
-                byID[snapshot.id] = snapshot
-            }
-        }
-        return Array(byID.values)
     }
 
     private func refreshHealthDataForCurrentPreferences() async {

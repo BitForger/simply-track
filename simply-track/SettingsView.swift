@@ -124,23 +124,9 @@ struct SettingsView: View {
     }
 
     private var localHealthImportCandidates: [HealthImportCandidate] {
-        let healthKitEntries = entries.filter { $0.source == "healthKit" }
-        var latestByName: [String: FoodEntry] = [:]
-
-        for entry in healthKitEntries {
-            let key = normalizedHealthImportKey(entry.foodName)
-            if let existing = latestByName[key], existing.consumedAt >= entry.consumedAt {
-                continue
-            }
-            latestByName[key] = entry
-        }
-
-        return latestByName.values
-            .filter { entry in
-                !foodCatalog.contains { $0.name.caseInsensitiveCompare(entry.foodName) == .orderedSame }
-            }
-            .map { HealthImportCandidate(name: $0.foodName, amountDescription: $0.amountDescription, calories: $0.calories) }
-            .sorted { $0.name < $1.name }
+        HealthImportCandidateService
+            .localFallbackCandidates(from: entries, existingCatalog: foodCatalog)
+            .map(HealthImportCandidate.init)
     }
 
     private var canImportFoodsFromHealth: Bool {
@@ -376,12 +362,7 @@ struct SettingsView: View {
                     profile.weeklyCalorieTarget = profile.recommendedWeeklyTarget()
                     dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
                     weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
-                    do {
-                        try modelContext.save()
-                    } catch {
-                        saveErrorMessage = error.localizedDescription
-                        showingSaveErrorAlert = true
-                    }
+                    commitProfileChangesImmediately()
                 }
 
                 LabeledContent("Daily target") {
@@ -525,6 +506,8 @@ struct SettingsView: View {
         .onChange(of: profile.autoSaveToCatalog) { _, _ in scheduleDebouncedProfileSave() }
         .alert("Couldn't Save Settings", isPresented: $showingSaveErrorAlert) {
             Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "An unexpected error occurred while saving your settings.")
         }
         .navigationTitle("Settings")
         
@@ -674,7 +657,10 @@ struct SettingsView: View {
             return
         }
 
-        if shouldUseCachedHealthImportResult,
+        if HealthImportCandidateService.shouldUseCachedResult(
+            fetchedAt: cachedHealthImportFetchedAt,
+            ttl: healthImportCacheTTL
+        ),
            !cachedHealthImportCandidates.isEmpty,
            let cachedHealthImportFetchedAt {
             healthImportCandidates = cachedHealthImportCandidates
@@ -692,16 +678,27 @@ struct SettingsView: View {
 
         let now = Date()
         let startDate = Calendar.current.date(byAdding: .day, value: -healthImportLookbackDays, to: now) ?? now
-        let windows = makeIncrementalHealthImportWindows(from: startDate, to: now, stepDays: healthImportPageDays)
+        let windows = HealthImportCandidateService.makeFetchWindows(
+            from: startDate,
+            to: now,
+            stepDays: healthImportPageDays
+        )
         var fetchedPayloads: [CalorieEntryPayload] = []
+        var encounteredHealthFetchError = false
 
         for (index, window) in windows.enumerated() {
             healthImportStatusMessage = "Scanning Health foods... \(index + 1)/\(windows.count)"
-            let pagePayloads = await fetchHealthEntries(from: window.start, to: window.end)
-            fetchedPayloads.append(contentsOf: pagePayloads)
+            do {
+                let pagePayloads = try await fetchHealthEntries(from: window.start, to: window.end)
+                fetchedPayloads.append(contentsOf: pagePayloads)
+            } catch {
+                encounteredHealthFetchError = true
+            }
         }
 
-        let importedCandidates = makeHealthImportCandidates(from: fetchedPayloads)
+        let importedCandidates = HealthImportCandidateService
+            .importedCandidates(from: fetchedPayloads, existingCatalog: foodCatalog)
+            .map(HealthImportCandidate.init)
         let fallbackCandidates = importedCandidates.isEmpty ? localHealthImportCandidates : importedCandidates
 
         healthImportCandidates = fallbackCandidates
@@ -709,78 +706,39 @@ struct SettingsView: View {
         cachedHealthImportFetchedAt = now
 
         if fallbackCandidates.isEmpty {
-            healthImportStatusMessage = "No importable foods found in the last \(healthImportLookbackDays) days."
+            healthImportStatusMessage = encounteredHealthFetchError
+                ? "Couldn't read Health foods right now. Try again in a moment."
+                : "No importable foods found in the last \(healthImportLookbackDays) days."
             showingHealthImportSheet = false
         } else {
-            healthImportStatusMessage = importedCandidates.isEmpty
-                ? "Found \(fallbackCandidates.count) importable foods from previous sync entries."
-                : "Found \(fallbackCandidates.count) importable foods from Health."
+            if importedCandidates.isEmpty {
+                healthImportStatusMessage = encounteredHealthFetchError
+                    ? "Health read was partially unavailable. Showing \(fallbackCandidates.count) candidates from previous sync entries."
+                    : "Found \(fallbackCandidates.count) importable foods from previous sync entries."
+            } else {
+                healthImportStatusMessage = "Found \(fallbackCandidates.count) importable foods from Health."
+            }
             showingHealthImportSheet = true
         }
-    }
-
-    private var shouldUseCachedHealthImportResult: Bool {
-        guard let cachedHealthImportFetchedAt else { return false }
-        return Date().timeIntervalSince(cachedHealthImportFetchedAt) <= healthImportCacheTTL
     }
 
     private func relativeTimestamp(for date: Date) -> String {
         Self.relativeDateTimeFormatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private func makeIncrementalHealthImportWindows(from startDate: Date, to endDate: Date, stepDays: Int) -> [(start: Date, end: Date)] {
-        guard startDate < endDate, stepDays > 0 else { return [(start: startDate, end: endDate)] }
-
-        var windows: [(start: Date, end: Date)] = []
-        var cursor = startDate
-        let calendar = Calendar.current
-
-        while cursor < endDate {
-            let next = min(calendar.date(byAdding: .day, value: stepDays, to: cursor) ?? endDate, endDate)
-            windows.append((start: cursor, end: next))
-            cursor = next
-        }
-
-        return windows
+    private func fetchHealthEntries(from startDate: Date, to endDate: Date) async throws -> [CalorieEntryPayload] {
+        try await healthKitService.fetchEntries(from: startDate, to: endDate)
     }
 
-    private func fetchHealthEntries(from startDate: Date, to endDate: Date) async -> [CalorieEntryPayload] {
-        do {
-            return try await healthKitService.fetchEntries(from: startDate, to: endDate)
-        } catch {
-            return []
-        }
-    }
-
-    private func makeHealthImportCandidates(from payloads: [CalorieEntryPayload]) -> [HealthImportCandidate] {
-        var latestByName: [String: CalorieEntryPayload] = [:]
-
-        for payload in payloads {
-            let key = normalizedHealthImportKey(payload.foodName)
-            guard !key.isEmpty else { continue }
-
-            if let existing = latestByName[key], existing.consumedAt >= payload.consumedAt {
-                continue
-            }
-            latestByName[key] = payload
-        }
-
-        return latestByName.values
-            .filter { entry in
-                !foodCatalog.contains { existing in
-                    normalizedHealthImportKey(existing.name) == normalizedHealthImportKey(entry.foodName)
-                }
-            }
-            .map { HealthImportCandidate(name: $0.foodName, amountDescription: $0.amountDescription, calories: $0.calories) }
-            .sorted { $0.name < $1.name }
-    }
-
-    private func normalizedHealthImportKey(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
 
     private func importCatalogItems(_ candidates: [HealthImportCandidate]) {
+        var existingNames = Set(foodCatalog.map { normalizedCatalogName($0.name) })
+        var insertedCount = 0
+
         for candidate in candidates {
+            let normalized = normalizedCatalogName(candidate.name)
+            guard !normalized.isEmpty, !existingNames.contains(normalized) else { continue }
+
             modelContext.insert(
                 FoodCatalogItem(
                     name: candidate.name,
@@ -789,7 +747,27 @@ struct SettingsView: View {
                     isUserAdded: true
                 )
             )
+
+            existingNames.insert(normalized)
+            insertedCount += 1
         }
+
+        if insertedCount > 0 {
+            commitProfileChangesImmediately()
+        }
+
+        let skippedCount = max(0, candidates.count - insertedCount)
+        if insertedCount > 0, skippedCount == 0 {
+            healthImportStatusMessage = "Imported \(insertedCount) food\(insertedCount == 1 ? "" : "s") into Personal Foods."
+        } else if insertedCount > 0 {
+            healthImportStatusMessage = "Imported \(insertedCount) food\(insertedCount == 1 ? "" : "s"). Skipped \(skippedCount) duplicate\(skippedCount == 1 ? "" : "s")."
+        } else {
+            healthImportStatusMessage = "No new foods were imported."
+        }
+    }
+
+    private func normalizedCatalogName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func sanitizeTargetInput(_ input: String) -> String {
@@ -832,6 +810,12 @@ private struct HealthImportCandidate: Identifiable {
     let name: String
     let amountDescription: String
     let calories: Double
+
+    init(_ record: HealthImportCandidateRecord) {
+        self.name = record.name
+        self.amountDescription = record.amountDescription
+        self.calories = record.calories
+    }
 }
 
 private struct HealthKitCatalogImportSheet: View {
