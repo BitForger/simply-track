@@ -7,7 +7,6 @@ struct AddFoodEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let foodCatalog: [FoodCatalogItem]
-    let initialSaveToCatalog: Bool
     let onSave: (AddFoodEntryPayload) -> Void
 
     @State private var selectedCatalogID: UUID?
@@ -19,7 +18,6 @@ struct AddFoodEntrySheet: View {
 
     init(foodCatalog: [FoodCatalogItem], initialSaveToCatalog: Bool, onSave: @escaping (AddFoodEntryPayload) -> Void) {
         self.foodCatalog = foodCatalog
-        self.initialSaveToCatalog = initialSaveToCatalog
         self.onSave = onSave
         _saveToCatalog = State(initialValue: initialSaveToCatalog)
     }

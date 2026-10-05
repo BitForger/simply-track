@@ -19,7 +19,9 @@ struct HomeDashboardView: View {
             return existing
         }
 
-        return UserProfile()
+        let fallbackProfile = UserProfile()
+        modelContext.insert(fallbackProfile)
+        return fallbackProfile
     }
 
     private var todayCalories: Double {
@@ -125,7 +127,7 @@ struct HomeDashboardView: View {
 
     private var weeklyCard: some View {
         let status = CalorieSummaryCalculator.weeklyStatus(total: weeklyCalories, target: weeklyTarget)
-        let progress = max(0, min(1, weeklyCalories / max(weeklyTarget, 1)))
+        let progress = min(1, max(0, CalorieSummaryCalculator.weeklyProgress(total: weeklyCalories, target: weeklyTarget)))
         let weekRange = CalorieSummaryCalculator.weekRange(for: .now)
         let remaining = CalorieSummaryCalculator.remainingWeeklyCalories(total: weeklyCalories, target: weeklyTarget)
 

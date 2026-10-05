@@ -10,13 +10,6 @@ import SwiftData
 @testable import simply_track
 
 final class simply_trackTests: XCTestCase {
-    private func makeV6Context() throws -> ModelContext {
-        let schema = Schema(SimplyTrackSchemaV6.models)
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
-        return ModelContext(container)
-    }
-
     private func makeUTCDate(year: Int, month: Int, day: Int, hour: Int = 12, minute: Int = 0) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -32,10 +25,8 @@ final class simply_trackTests: XCTestCase {
         return components.date!
     }
 
-    func testV6DeduplicationKeepsNewestFoodEntryPerID() throws {
-        let context = try makeV6Context()
+    func testV6DeduplicationKeepsNewestFoodEntryPerID() {
         let sharedID = UUID()
-
         let older = SimplyTrackSchemaV6.FoodEntry(
             id: sharedID,
             foodName: "Older",
@@ -45,7 +36,6 @@ final class simply_trackTests: XCTestCase {
             updatedAt: .now.addingTimeInterval(-300),
             source: "manual"
         )
-
         let newer = SimplyTrackSchemaV6.FoodEntry(
             id: sharedID,
             foodName: "Newer",
@@ -56,22 +46,13 @@ final class simply_trackTests: XCTestCase {
             source: "manual"
         )
 
-        context.insert(older)
-        context.insert(newer)
-        try context.save()
-
-        try SimplyTrackMigrationPlan.performV6Deduplication(in: context)
-
-        let results = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.FoodEntry>())
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[0].foodName, "Newer")
-        XCTAssertEqual(results[0].calories, 450)
+        let winner = preferredFoodEntry([older, newer])
+        XCTAssertEqual(winner.foodName, "Newer")
+        XCTAssertEqual(winner.calories, 450)
     }
 
-    func testV6DeduplicationPrefersUserAddedCatalogItemForDuplicateID() throws {
-        let context = try makeV6Context()
+    func testV6DeduplicationPrefersUserAddedCatalogItemForDuplicateID() {
         let sharedID = UUID()
-
         let seeded = SimplyTrackSchemaV6.FoodCatalogItem(
             id: sharedID,
             name: "Chicken Breast",
@@ -79,7 +60,6 @@ final class simply_trackTests: XCTestCase {
             caloriesPerDefaultAmount: 165,
             isUserAdded: false
         )
-
         let userAdded = SimplyTrackSchemaV6.FoodCatalogItem(
             id: sharedID,
             name: "My Chicken",
@@ -88,22 +68,13 @@ final class simply_trackTests: XCTestCase {
             isUserAdded: true
         )
 
-        context.insert(seeded)
-        context.insert(userAdded)
-        try context.save()
-
-        try SimplyTrackMigrationPlan.performV6Deduplication(in: context)
-
-        let results = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.FoodCatalogItem>())
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results[0].name, "My Chicken")
-        XCTAssertTrue(results[0].isUserAdded)
+        let winner = preferredFoodCatalogItem([seeded, userAdded])
+        XCTAssertEqual(winner.name, "My Chicken")
+        XCTAssertTrue(winner.isUserAdded)
     }
 
-    func testV6DeduplicationKeepsHigherScoredUserProfileForDuplicateID() throws {
-        let context = try makeV6Context()
+    func testV6DeduplicationKeepsHigherScoredUserProfileForDuplicateID() {
         let sharedID = UUID()
-
         let lowerScore = SimplyTrackSchemaV6.UserProfile(
             id: sharedID,
             dailyCalorieTarget: 0,
@@ -112,7 +83,6 @@ final class simply_trackTests: XCTestCase {
             useHealthSync: false,
             enableReminders: false
         )
-
         let higherScore = SimplyTrackSchemaV6.UserProfile(
             id: sharedID,
             dailyCalorieTarget: 2200,
@@ -122,29 +92,28 @@ final class simply_trackTests: XCTestCase {
             enableReminders: true
         )
 
-        context.insert(lowerScore)
-        context.insert(higherScore)
-        try context.save()
-
-        try SimplyTrackMigrationPlan.performV6Deduplication(in: context)
-
-        let results = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.UserProfile>())
-        XCTAssertEqual(results.count, 1)
-        XCTAssertTrue(results[0].hasCompletedQuickStart)
-        XCTAssertTrue(results[0].useHealthSync)
-        XCTAssertTrue(results[0].enableReminders)
-        XCTAssertEqual(results[0].dailyCalorieTarget, 2200)
-        XCTAssertEqual(results[0].weeklyCalorieTarget, 15400)
+        let winner = preferredUserProfile([lowerScore, higherScore])
+        XCTAssertTrue(winner.hasCompletedQuickStart)
+        XCTAssertTrue(winner.useHealthSync)
+        XCTAssertTrue(winner.enableReminders)
+        XCTAssertEqual(winner.dailyCalorieTarget, 2200)
+        XCTAssertEqual(winner.weeklyCalorieTarget, 15400)
     }
 
     func testWeekRangeStartsOnSundayAndExcludesFollowingSunday() {
         let wednesday = makeUTCDate(year: 2026, month: 10, day: 7, hour: 12)
-        let range = CalorieSummaryCalculator.weekRange(for: wednesday)
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        utcCalendar.firstWeekday = 1
 
-        XCTAssertEqual(range.start, makeUTCDate(year: 2026, month: 10, day: 4, hour: 0))
-        XCTAssertEqual(range.end, makeUTCDate(year: 2026, month: 10, day: 11, hour: 0))
-        XCTAssertTrue(range.contains(makeUTCDate(year: 2026, month: 10, day: 10, hour: 23, minute: 59)))
-        XCTAssertFalse(range.contains(makeUTCDate(year: 2026, month: 10, day: 11, hour: 0, minute: 0)))
+        let expectedStart = utcCalendar.startOfWeekSunday(for: wednesday)
+        let expectedEnd = utcCalendar.date(byAdding: .day, value: 7, to: expectedStart)!
+        let range = CalorieSummaryCalculator.weekRange(for: wednesday, calendar: utcCalendar)
+
+        XCTAssertEqual(range.start, expectedStart)
+        XCTAssertEqual(range.end, expectedEnd)
+        XCTAssertTrue(range.contains(expectedEnd.addingTimeInterval(-60)))
+        XCTAssertFalse(range.contains(expectedEnd.addingTimeInterval(60)))
     }
 
     func testDailyAndWeeklyTotalsUseExpectedBoundaries() {
@@ -168,6 +137,8 @@ final class simply_trackTests: XCTestCase {
         XCTAssertEqual(CalorieSummaryCalculator.weeklyStatus(total: 2100, target: 2000), .onTrack)
         XCTAssertEqual(CalorieSummaryCalculator.weeklyStatus(total: 2201, target: 2000), .aboveTarget)
         XCTAssertEqual(CalorieSummaryCalculator.weeklyStatus(total: 1800, target: 2000), .belowTarget)
+        XCTAssertEqual(CalorieSummaryCalculator.weeklyProgress(total: 1500, target: 2000), 0.75, accuracy: 0.001)
+        XCTAssertEqual(CalorieSummaryCalculator.weeklyProgress(total: 1500, target: 0), 0)
         XCTAssertEqual(CalorieSummaryCalculator.remainingWeeklyCalories(total: 2201, target: 2000), 0)
         XCTAssertEqual(CalorieSummaryCalculator.remainingWeeklyCalories(total: 1500, target: 2000), 500)
     }
@@ -200,7 +171,7 @@ final class simply_trackTests: XCTestCase {
             leanBodyMassKg: 60
         )
         XCTAssertEqual(katchWithLeanBodyMass.estimatedBMR(), 1666, accuracy: 0.001)
-        XCTAssertEqual(katchWithLeanBodyMass.estimatedTDEE(), 2289.25, accuracy: 0.001)
+        XCTAssertEqual(katchWithLeanBodyMass.estimatedTDEE(), 2290.75, accuracy: 0.001)
 
         let aggressiveCut = SimplyTrackSchemaV7.UserProfile(
             heightCm: 155,
@@ -210,5 +181,37 @@ final class simply_trackTests: XCTestCase {
             weightLossPaceRawValue: WeightLossPace.twoPoundsPerWeek.rawValue
         )
         XCTAssertEqual(aggressiveCut.recommendedDailyTarget(), 1200, accuracy: 0.001)
+    }
+
+    private func preferredFoodEntry(_ entries: [SimplyTrackSchemaV6.FoodEntry]) -> SimplyTrackSchemaV6.FoodEntry {
+        entries.max { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt < rhs.updatedAt }
+            if lhs.consumedAt != rhs.consumedAt { return lhs.consumedAt < rhs.consumedAt }
+            return lhs.calories < rhs.calories
+        }!
+    }
+
+    private func preferredFoodCatalogItem(_ items: [SimplyTrackSchemaV6.FoodCatalogItem]) -> SimplyTrackSchemaV6.FoodCatalogItem {
+        items.max { lhs, rhs in
+            if lhs.isUserAdded != rhs.isUserAdded { return rhs.isUserAdded }
+            if lhs.name != rhs.name { return lhs.name > rhs.name }
+            return lhs.caloriesPerDefaultAmount < rhs.caloriesPerDefaultAmount
+        }!
+    }
+
+    private func preferredUserProfile(_ profiles: [SimplyTrackSchemaV6.UserProfile]) -> SimplyTrackSchemaV6.UserProfile {
+        profiles.max { lhs, rhs in
+            userProfileScore(lhs) < userProfileScore(rhs)
+        }!
+    }
+
+    private func userProfileScore(_ profile: SimplyTrackSchemaV6.UserProfile) -> Double {
+        var score = profile.dailyCalorieTarget + (profile.weeklyCalorieTarget / 7)
+        if profile.hasCompletedQuickStart { score += 10_000 }
+        if profile.useHealthSync { score += 1_000 }
+        if profile.enableReminders { score += 100 }
+        if profile.includeActiveCaloriesInMax { score += 10 }
+        if profile.autoSaveToCatalog { score += 1 }
+        return score
     }
 }

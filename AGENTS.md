@@ -1,22 +1,28 @@
-# SimplyTrack Architecture & Services
+# SimplyTrack Architecture Guide
 
-This document outlines the internal architecture, key services, and how data flows through Simply Track.
+This document describes the current architecture and major data flows for Simply Track.
 
 ## Overview
 
-Simply Track uses a modular architecture built around SwiftUI and SwiftData, with a dedicated sync coordinator managing HealthKit interactions. The app calculates calorie targets dynamically based on user profile metrics (age, sex, height, weight, activity level, goal) and optionally adjusts daily/weekly maximums based on active calories burned from Apple Health.
+Simply Track is a SwiftUI + SwiftData app with three primary user surfaces:
 
-## Project Structure
+- `HomeDashboardView` for daily/weekly status.
+- `LogEntriesView` for entry CRUD.
+- `SettingsView` for profile, targets, sync, reminders, and catalog tools.
 
-Source files are organized by responsibility under `simply-track/`:
+`ContentView` orchestrates these surfaces, coordinating persistence and HealthKit-related refresh actions.
 
-```
+## Workspace Structure
+
+```text
 simply-track/
-├── ContentView.swift              # Main dashboard + onboarding, sync, persistence orchestration
-├── HomeDashboardView.swift        # Dashboard cards and calorie summaries
-├── LogEntriesView.swift           # Log tab (today/yesterday entries, edit/delete)
-├── SettingsView.swift             # Settings tab (profile, targets, catalog, reminders)
-├── TDEEEquationSettingsView.swift # Settings sub-screen: pick BMR/TDEE equation, enter/fetch lean body mass
+├── ContentView.swift
+├── HomeDashboardView.swift
+├── LogEntriesView.swift
+├── SettingsView.swift
+├── AddFoodEntrySheet.swift
+├── QuickStartOnboardingView.swift
+├── TDEEEquationSettingsView.swift
 ├── Services/
 │   ├── CalorieSummaryCalculator.swift
 │   ├── HealthKitService.swift
@@ -25,11 +31,12 @@ simply-track/
 │   └── StreakCalculator.swift
 ├── Models/
 │   ├── BiologicalSex.swift
-│   ├── NutritionGoal.swift
-│   ├── WeightLossPace.swift
-│   ├── WeeklyAggregateStatus.swift
+│   ├── EntryPayloads.swift
 │   ├── FoodCatalogSeed.swift
+│   ├── NutritionGoal.swift
 │   ├── TDEEEquation.swift
+│   ├── WeeklyAggregateStatus.swift
+│   ├── WeightLossPace.swift
 │   └── Schemas/
 │       ├── SimplyTrackSchemaV1.swift
 │       ├── SimplyTrackSchemaV2.swift
@@ -37,275 +44,146 @@ simply-track/
 │       ├── SimplyTrackSchemaV4.swift
 │       ├── SimplyTrackSchemaV5.swift
 │       ├── SimplyTrackSchemaV6.swift
-│       ├── SimplyTrackSchemaV7.swift       # Active schema
-│       └── SimplyTrackMigrationPlan.swift  # Migration stages + FoodEntry/FoodCatalogItem/UserProfile typealiases
-├── Extensions/
-│   └── Calendar+GregorianSundayStart.swift
-└── simply_trackApp.swift  # App entry point, ModelContainer setup and recovery
+│       ├── SimplyTrackSchemaV7.swift
+│       └── SimplyTrackMigrationPlan.swift
+└── simply_trackApp.swift
 ```
 
-## Core Services
-
-### 1. **HealthKitSyncCoordinator** (`ContentView.swift`)
-
-The primary service responsible for all HealthKit integration.
-
-**Responsibilities:**
-- Authorization and permissions management
-- Reading workout (active energy) and dietary calorie data from HealthKit
-- Syncing HealthKit entries into the local database
-- Deleting entries from both HealthKit and local storage
-- Aggregating burned calories for burn-adjusted max calculations
-
-**Key Methods:**
-- `authorizationStatus() -> HKAuthorizationStatus` — Check current authorization state
-- `requestAuthorization(completion:)` — Prompt user for HealthKit access (async/await wrapper provided)
-- `pullActiveCaloriesBurned(from:to:) -> ActiveCaloriesReadResult` — Fetch cumulative active energy burned over a date range with fallback messaging
-- `syncFromHealthKit(completion:)` — Read dietary calories from HealthKit and merge with local entries
-- `deleteHealthKitEntry(...)` — Remove entry from both HealthKit and local storage
-- `getHealthKitEntries(...)` — Retrieve active HealthKit entries from the app's read-only HK store
-
-**Data Flow:**
-```
-HealthKit (HKSampleStore)
-    ↓
-HealthKitSyncCoordinator.syncFromHealthKit()
-    ↓
-Local FoodEntry items (SwiftData)
-    ↓
-Dashboard calculations and display
-```
-
-### 2. **CalorieSummaryCalculator** (`Services/CalorieSummaryCalculator.swift`)
-
-Static helper for aggregating and analyzing calorie data.
-
-**Key Methods:**
-- `caloriesSummary(for:in:) -> (consumed: Double, goal: Double, remaining: Double)` — Compute daily totals
-- `weeklyCaloriesSummary(for:in:) -> (consumed: Double, goal: Double, remaining: Double)` — Compute weekly totals with fixed Sunday-start boundaries
-- `weekRange(for:) -> (start: Date, end: Date)` — Fixed weekly boundaries matching the current Gregorian calendar week (Sunday–Saturday)
-
-**Purpose:**
-- Aggregates intake from all `FoodEntry` items for a given time window
-- Computes remaining calories (goal − consumed) accounting for burn adjustments
-- Ensures consistent week boundaries across all weekly calculations
-
-### 3. **UserProfile** (SwiftData Model, `Models/Schemas/SimplyTrackSchemaV3.swift`)
-
-Persistent user data and profile-based calculations.
-
-**Fields:**
-- `name`, `age`, `sex`, `height`, `weight`, `activityLevel`, `goal` — User metrics
-- `createdAt` — Timestamp of profile creation
-- **Removed:** `selectedTargetModeRawValue` (legacy; kept in V1 schema only for migration)
-
-**Computed Properties:**
-- `baseDailyTarget: Double` — Daily calorie target based on TDEE formula:
-  - **Maintain goal:** TDEE as-is
-  - **Lose weight goal:** TDEE − 500
-  - Uses formula: `BMR = 10 × weight + 6.25 × height − 5 × age [+ 5 or − 161 by sex]`; `TDEE = BMR × activityLevel`
-- `weeklyTarget: Double` — 7 × baseDailyTarget
-
-## Data Models
+## Core Domain Models
 
 ### FoodEntry
-- `id`, `name`, `calories`, `timestamp`, `source` (local or HealthKit)
-- SwiftData `@Model` for persistence
+
+- Stored in SwiftData.
+- Represents one consumed item.
+- Includes calorie value, consumed time, source (`manual` or `healthKit`), and optional HealthKit sample ID.
 
 ### FoodCatalogItem
-- `id`, `name`, `calories`, `calorieRange`, `timestamp`
-- Pre-seeded shortcuts for quick logging
+
+- Quick-pick template for faster logging.
+- Supports seeded entries and user-added entries (`isUserAdded`).
 
 ### UserProfile
-- Persistent via SwiftData
-- Linked to all intake calculations and burn adjustments
 
-## Burn-Adjusted Max Calorie Feature
+- Stores demographics, activity multiplier, goal mode, and personalization flags.
+- Stores manual targets (`dailyCalorieTarget`, `weeklyCalorieTarget`) and recommendation inputs.
+- Stores privacy/sync flags (`useHealthSync`, `enableReminders`, `includeActiveCaloriesInMax`, `autoSaveToCatalog`).
+- Supports TDEE equation choice + optional lean body mass.
 
-### Overview
-When enabled in Settings, daily and weekly calorie maximums include a bonus based on active calories burned via Apple Health, allowing users to "earn" extra calorie allowance through exercise.
+## Calculation Services
 
-### Formula
-```
-adjustedMax = baseDailyTarget + (burnMultiplier × activeCaloriesBurned)
-```
+### CalorieSummaryCalculator (`Services/CalorieSummaryCalculator.swift`)
 
-Where:
-- `baseDailyTarget` — User's baseline calorie target (computed from BMR/TDEE)
-- `burnMultiplier` — 1.0 for Maintain goals; 0.8 for Lose Weight goals (conservative assumption that 20% of burned is already accounted for in TDEE)
-- `activeCaloriesBurned` — Cumulative active energy from HealthKit for the current day/week
+- `dailyTotal(from:on:)`
+- `weekRange(for:calendar:)`
+- `weeklyTotal(from:around:calendar:)`
+- `weeklyStatus(total:target:tolerance:)`
+- `weeklyProgress(total:target:)`
+- `remainingWeeklyCalories(total:target:)`
 
-### User Preference
-- Toggle in **Settings:** "Adjust max with active calories burned"
-- Stored via `@AppStorage("includeActiveCaloriesInMax")`
-- Applies to both daily and weekly views
-- Calculated in real-time in `ContentView.swift` without schema changes to SwiftData
+Important behavior:
 
-### Weekly Boundaries
-- Fixed to calendar week (Sunday–Saturday) matching `CalorieSummaryCalculator.weekRange(for:)`
-- Prevents daily swings as new burn data is added
-- Ensures consistency with weekly intake calculations
+- Weekly boundaries use a fixed Sunday-start Gregorian calendar.
+- Weekly dashboard progress uses `weeklyProgress(...)` directly to keep calculations centralized.
 
-### Fallback Behavior
-If HealthKit data is unavailable or access denied:
-- Active calories default to `0`
-- User sees base targets applied
-- Optional fallback message displays in orange: *"Active calories unavailable right now. Using base targets only until Health data is available."*
-- App remains fully functional
+### StreakCalculator (`Services/StreakCalculator.swift`)
 
-### Integration Points
-- **ContentView.swift:**
-  - Fetches burn data on app launch and after each Health sync
-  - Stores `dailyActiveCaloriesBurned` and `weeklyActiveCaloriesBurned` as `@State`
-  - Computes `adjustedDailyBonus`, `adjustedWeeklyBonus` using `burnAdjustmentMultiplier`
-  - Displays bonus in daily/weekly cards with formula explanation
-- **SettingsView.swift:**
-  - Hosts the toggle controlling the feature
-  - Displays summary text explaining the active calculation (e.g., "Base 2000 + bonus (80% of burned)")
+- Computes current streak and week logging consistency statistics for dashboard UI.
 
-## Data Persistence & Schema Versioning
+## HealthKit + Reminder Services
 
-### SwiftData Schemas (Versioned)
+### HealthKitService (`Services/HealthKitService.swift`)
 
-**SimplyTrackSchemaV1** (Initial, `Models/Schemas/SimplyTrackSchemaV1.swift`)
-- `FoodEntry`, `FoodCatalogItem`, `UserProfile`
-- `UserProfile` includes legacy `selectedTargetModeRawValue` field (deprecated)
+- Handles HealthKit authorization checks/requests.
+- Reads dietary energy samples into `CalorieEntryPayload`.
+- Reads active energy for burn adjustments.
+- Saves/deletes diet entries in HealthKit.
+- Performs read-first sync merge logic using `updatedAt` precedence.
 
-**SimplyTrackSchemaV2** (`Models/Schemas/SimplyTrackSchemaV2.swift`)
-- `FoodEntry`, `FoodCatalogItem`, `UserProfile`
-- `UserProfile` removes `selectedTargetModeRawValue`
+### HealthKitSyncCoordinator (`Services/HealthKitSyncCoordinator.swift`)
 
-**SimplyTrackSchemaV3** (`Models/Schemas/SimplyTrackSchemaV3.swift`)
-- `FoodEntry`, `FoodCatalogItem`, `UserProfile`
-- `FoodCatalogItem` adds `isUserAdded` to distinguish personal vs. seeded catalog entries
+- View-facing observable state for sync messages, authorization status, and flow control.
+- Delegates platform operations to `HealthKitService`.
 
-**SimplyTrackSchemaV4** (Current, `Models/Schemas/SimplyTrackSchemaV4.swift`)
-- `FoodEntry`, `FoodCatalogItem`, `UserProfile`
-- `UserProfile` adds `tdeeEquationRawValue` (default Mifflin-St Jeor) and optional `leanBodyMassKg`
-- Enables choosing between Mifflin-St Jeor, Harris-Benedict, and Katch-McArdle for BMR/TDEE estimation
-- **Active schema** for all new installs and updated devices
+### ReminderManager (`Services/ReminderManager.swift`)
 
-### Migration Plan
-- **SimplyTrackMigrationPlan** (`Models/Schemas/SimplyTrackMigrationPlan.swift`): Lightweight migrations V1 → V2 → V3 → V4
-  - V1 → V2 removes legacy `selectedTargetModeRawValue`
-  - V2 → V3 adds `isUserAdded` to `FoodCatalogItem`
-  - V3 → V4 adds `tdeeEquationRawValue` and `leanBodyMassKg` to `UserProfile`
-  - Preserves all other user data
-  - No data loss
+- Schedules/disables local reminders.
+- Returns explicit status values consumed by `SettingsView` and `ContentView`.
 
-## TDEE Equation Selection
+## UI Layer Responsibilities
 
-### Overview
-Users can choose which BMR/TDEE formula powers their calorie targets from **Settings → Metabolism → TDEE Equation**, which opens `TDEEEquationSettingsView`.
+### ContentView
 
-### Equations
-- **Mifflin-St Jeor** (default) — most accurate for the general population.
-- **Harris-Benedict** — classic formula; tends to overestimate BMR vs. Mifflin-St Jeor.
-- **Katch-McArdle** — most accurate for lean/muscular individuals; requires `leanBodyMassKg`. Falls back to Mifflin-St Jeor until a lean body mass value is set.
+- Hosts top-level navigation/tabs and shared app-state orchestration.
+- Owns `HealthKitSyncCoordinator` lifecycle.
+- Triggers initial refresh and write-through flows for profile + entries.
 
-Each option shows a short pros/cons summary (`TDEEEquation.summary`) beneath the picker.
+### HomeDashboardView
 
-### Lean Body Mass
-- Manually enterable (kg) directly in `TDEEEquationSettingsView`.
-- Optionally fetched from Apple Health's `HKQuantityTypeIdentifier.leanBodyMass` via a dedicated `LeanBodyMassReader`, which requests read-only authorization on demand (independent of the main `HealthKitSyncCoordinator` flow).
+- Shows daily/weekly cards, status labels, and consistency metrics.
+- Applies burn-adjusted bonus when enabled.
+- Uses `CalorieSummaryCalculator.weeklyStatus(...)` and `weeklyProgress(...)`.
 
-### Initialization (`simply_trackApp.swift`)
-- Preflight directory creation ensures `~/Library/Application Support` exists before model container initialization
-- Wired `migrationPlan: SimplyTrackMigrationPlan.self` to `ModelContainer`
-- Recovery path: Deletes corrupted store files and retries; falls back to in-memory store if needed
-- All paths include preflight directory creation to prevent CoreData initialization errors
+### LogEntriesView
 
-## Views & State Flow
-
-### ContentView (Main Dashboard)
-```
-@State private var includeActiveCaloriesInMax: AppStorage (persisted preference)
-@State private var dailyActiveCaloriesBurned: Double
-@State private var weeklyActiveCaloriesBurned: Double
-@State private var activeCaloriesFallbackMessage: String
-
-refreshActiveCaloriesBurned() — Fetch and update burn data
-↓
-Compute adjustedDailyTarget, adjustedWeeklyTarget, bonuses
-↓
-Render daily/weekly cards with totals, remaining, and bonus labels
-```
+- Displays Today + History sections.
+- Supports edit and delete operations.
+- Provides Health app jump action for history on supported iOS versions.
 
 ### SettingsView
-- Edits `UserProfile` (name, metrics, goal)
-- Toggles `includeActiveCaloriesInMax` with explanatory caption
-- Explains burn adjustment formula relative to current goal
 
-### HealthKitSyncCoordinator
-- Displayed in ContentView as "Pull from HealthKit" button
-- Triggers `syncFromHealthKit()` and UI refresh
-- Non-blocking async operation
+- Manages profile inputs, goal mode, target editing, and equation selection.
+- Handles reminder preference updates with permission-aware feedback.
+- Handles HealthKit import candidate scan and selective catalog import.
+- Persists changes with debounced saves for high-frequency edits.
 
-## Calculated Flows
+## Persistence and Startup
 
-### Daily Calorie Calculation
-```
-baseDailyTarget (from UserProfile.baseDailyTarget)
-+ [if includeActiveCaloriesInMax] adjustedDailyBonus (burnMultiplier × dailyActiveCaloriesBurned)
-= dailyTarget (max allowance)
+### App entry (`simply_trackApp.swift`)
 
-dailyTarget - consumedToday = dailyRemaining
-```
+- Builds SwiftData container from `SimplyTrackSchemaV7.models`.
+- Supports iCloud-backed mode (`useCloudKitPersistence`) with local fallback.
+- Handles persistence failure recovery:
+  - ensures app support directory
+  - creates backup snapshots
+  - removes stale SQLite sidecars
+  - retries local container creation
+- Exposes `PersistenceStatus` via environment.
 
-### Weekly Calorie Calculation
-```
-weeklyTarget (7 × baseDailyTarget)
-+ [if includeActiveCaloriesInMax] adjustedWeeklyBonus (burnMultiplier × weeklyActiveCaloriesBurned)
-= adjustedWeeklyTarget (max allowance for the week)
+## Schema and Migration
 
-adjustedWeeklyTarget - consumedThisWeek = weeklyRemaining
-```
+Current active schema:
 
-### Active Calorie Fetch
-```
-HealthKit.pullActiveCaloriesBurned(from: startDate, to: endDate)
-→ HKStatisticsQuery with .cumulativeSum (active energy burned)
-→ Fallback to 0 + optional fallback message if unavailable
-→ Stored in @State; refreshed on app launch and after sync
-```
+- `SimplyTrackSchemaV7` (`Schema.Version(7, 0, 0)`)
 
-### Dietary Entry Fetch (Launch)
-```
-ContentView.refreshFromHealthKit()
-→ Pulls HealthKit dietary entries from (today - 2 days) through now
-→ Merges into local FoodEntry store (insert new / update existing by id or healthKitSampleIdentifier)
-```
-The 2-day lookback (not just "today") ensures entries logged directly in the Health app on
-previous days — e.g. yesterday — are available locally so `LogEntriesView`'s "Yesterday"
-section is populated on every launch, even if the app wasn't opened the day before.
+Historical versions retained for migration:
 
-## Error Handling & Recovery
+- `SimplyTrackSchemaV1` through `SimplyTrackSchemaV6`
 
-### HealthKit Access
-- Missing authorization → fallback to 0 burned, show message
-- Health app data unavailable → fallback to 0 burned
-- Partial data failures → best-effort aggregation
+Migration helpers:
 
-### SwiftData Store
-- Corrupt store → delete and recreate with migration
-- Migration failure → in-memory fallback (data not persisted but app usable)
+- `SimplyTrackMigrationPlan.swift` contains compatibility aliases.
+- `SimplyTrackSchemaV7.swift` contains V6 deduplication helper logic used by tests and migration-oriented checks.
 
-### File System
-- Missing `Library/Application Support` → create on preflight
-- Permission issues → log warning, allow SwiftData recovery to proceed
+## Test Coverage Snapshot
 
-## Testing Considerations
+Primary tests are in `simply-trackTests/simply_trackTests.swift` and cover:
 
-### Simulator
-- Enable HealthKit permission in Simulator settings
-- Use HealthKit app to manually add workout entries
-- Toggle "Adjust max with active calories burned" to observe bonus changes
+- V6 duplicate-resolution heuristics for entries, catalog items, and profiles.
+- Week-range boundary semantics.
+- Daily/weekly aggregation behavior.
+- Weekly status/progress consistency.
+- TDEE equation calculations and weight-loss floor behavior.
 
-### Debug Logging
-- `DEBUG` conditional print statements log successful preflight directory creation
-- CoreData logs cleaner after migration/preflight improvements
+Most recent run in this workspace context: 8 passed, 0 failed.
+
+## Operational Notes
+
+- Keep all week-based calculations aligned to `CalorieSummaryCalculator.weekRange(...)`.
+- Keep burn-adjusted max logic symmetric between daily and weekly UI.
+- Avoid duplicating nutrition math in views; prefer model/service methods.
+- If schema model fields change, update tests and docs in the same PR.
 
 ---
 
-**Last Updated:** October 2026
-**Current Schema Version:** 7.0.0
+Last updated: October 2026
+Active schema version: 7.0.0

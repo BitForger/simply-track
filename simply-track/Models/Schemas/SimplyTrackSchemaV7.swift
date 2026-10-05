@@ -191,3 +191,71 @@ enum SimplyTrackSchemaV7: VersionedSchema {
         }
     }
 }
+
+enum SimplyTrackMigrationPlan {
+    static func performV6Deduplication(in context: ModelContext) throws {
+        try deduplicateFoodEntries(in: context)
+        try deduplicateFoodCatalogItems(in: context)
+        try deduplicateUserProfiles(in: context)
+        try context.save()
+    }
+
+    private static func deduplicateFoodEntries(in context: ModelContext) throws {
+        let entries = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.FoodEntry>())
+        let grouped = Dictionary(grouping: entries, by: \.id)
+
+        for duplicates in grouped.values where duplicates.count > 1 {
+            let winner = duplicates.max { lhs, rhs in
+                if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt < rhs.updatedAt }
+                if lhs.consumedAt != rhs.consumedAt { return lhs.consumedAt < rhs.consumedAt }
+                return lhs.calories < rhs.calories
+            }
+
+            for entry in duplicates where entry !== winner {
+                context.delete(entry)
+            }
+        }
+    }
+
+    private static func deduplicateFoodCatalogItems(in context: ModelContext) throws {
+        let items = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.FoodCatalogItem>())
+        let grouped = Dictionary(grouping: items, by: \.id)
+
+        for duplicates in grouped.values where duplicates.count > 1 {
+            let winner = duplicates.max { lhs, rhs in
+                if lhs.isUserAdded != rhs.isUserAdded { return rhs.isUserAdded }
+                if lhs.name != rhs.name { return lhs.name > rhs.name }
+                return lhs.caloriesPerDefaultAmount < rhs.caloriesPerDefaultAmount
+            }
+
+            for item in duplicates where item !== winner {
+                context.delete(item)
+            }
+        }
+    }
+
+    private static func deduplicateUserProfiles(in context: ModelContext) throws {
+        let profiles = try context.fetch(FetchDescriptor<SimplyTrackSchemaV6.UserProfile>())
+        let grouped = Dictionary(grouping: profiles, by: \.id)
+
+        for duplicates in grouped.values where duplicates.count > 1 {
+            let winner = duplicates.max { lhs, rhs in
+                userProfileScore(lhs) < userProfileScore(rhs)
+            }
+
+            for profile in duplicates where profile !== winner {
+                context.delete(profile)
+            }
+        }
+    }
+
+    private static func userProfileScore(_ profile: SimplyTrackSchemaV6.UserProfile) -> Double {
+        var score = profile.dailyCalorieTarget + (profile.weeklyCalorieTarget / 7)
+        if profile.hasCompletedQuickStart { score += 10_000 }
+        if profile.useHealthSync { score += 1_000 }
+        if profile.enableReminders { score += 100 }
+        if profile.includeActiveCaloriesInMax { score += 10 }
+        if profile.autoSaveToCatalog { score += 1 }
+        return score
+    }
+}

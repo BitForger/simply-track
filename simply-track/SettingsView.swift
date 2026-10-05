@@ -10,9 +10,6 @@ import SwiftData
 #if canImport(UIKit)
 import UIKit
 #endif
-#if canImport(WebKit)
-import WebKit
-#endif
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext

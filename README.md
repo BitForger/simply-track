@@ -1,47 +1,42 @@
 # Simply Track
 
-Simply Track is a SwiftUI calorie-tracking app built with SwiftData. It helps you log food entries, track daily and weekly calorie goals, and review your consistency over time. The app includes optional HealthKit sync for reading active calories burned, reminders, a quick-start onboarding flow, and an optional burn-adjusted max calorie feature that lets you "earn" extra calorie allowance through exercise.
+Simply Track is a SwiftUI calorie tracking app built on SwiftData. It focuses on fast food logging, clear daily and weekly progress, and optional HealthKit integration.
 
-## Features
+## Highlights
 
-- **Quick Start onboarding** for privacy, HealthKit access, and sync preferences
-- **Manual food logging** with name, amount, calories, and time
-- **Daily and weekly dashboards** with progress indicators and target summaries
-- **Profile-based calorie targets** using age, sex, height, weight, activity level, and goal
-- **Estimated BMR and TDEE** from user metrics and activity level
-- **Burn-adjusted max calories** (toggle in Settings) — daily/weekly maximum includes a bonus based on active calories burned from Apple Health
-  - Maintain goal: 100% of burned calories added to max
-  - Lose weight goal: 80% of burned calories added to max (conservative)
-  - Uses fixed calendar week boundaries to prevent daily swings
-- **Food catalog shortcuts** for common entries
-- **HealthKit integration** for reading, syncing, and deleting calorie entries; pulling active energy burned
-- **Optional reminders** to log calories later in the day
-- **SwiftData persistence** with versioned schemas, automatic migration, and recovery handling
+- Daily and weekly calorie progress with fixed Sunday-start week boundaries.
+- Home dashboard weekly status uses `CalorieSummaryCalculator.weeklyProgress(...)` for consistent progress math.
+- Profile-driven targets with selectable TDEE equations (Mifflin-St Jeor, Harris-Benedict, Katch-McArdle).
+- Optional burn-adjusted max calories (base target + percentage of active calories burned).
+- Optional reminders and Quick Start onboarding.
+- Optional iCloud-backed SwiftData persistence with local fallback and recovery handling.
 
 ## Requirements
 
-- Xcode with SwiftUI and SwiftData support
-- iPhone and/or Mac run destination, depending on the scheme configuration
-- Optional permissions for HealthKit and notifications if you enable those features
+- Xcode 16+
+- iOS 18+ (or compatible Apple platform destination configured by the scheme)
+- HealthKit and notification permissions are optional and only needed for those features
 
-## Getting Started
+## Run Locally
 
 1. Open `simply-track.xcodeproj` in Xcode.
 2. Select the `simply-track` scheme.
-3. Choose a simulator or connected device.
-4. Build and run the app.
+3. Pick a simulator or connected device.
+4. Build and run.
 
-When the app launches for the first time, it creates a default profile and seeds a small food catalog automatically.
+On first launch, the app creates a default `UserProfile` and seeds base food catalog entries.
 
-## Project Structure
+## Current Project Layout
 
 ```text
 simply-track/
-├── ContentView.swift              # Main app UI, orchestration, onboarding, sync
-├── HomeDashboardView.swift        # Dashboard sections and calorie summaries
-├── LogEntriesView.swift           # Manual entry list, edit/delete, Health app links
-├── SettingsView.swift             # Profile metrics, targets, catalog, reminders
-├── TDEEEquationSettingsView.swift # BMR/TDEE equation selection and lean body mass
+├── ContentView.swift                    # Root container, tab wiring, orchestration
+├── HomeDashboardView.swift              # Daily/weekly cards, streaks, metabolism summary
+├── LogEntriesView.swift                 # Entry list, edit/delete flows, history shortcuts
+├── SettingsView.swift                   # Profile, targets, sync toggles, Health import
+├── AddFoodEntrySheet.swift              # Manual add-entry form
+├── QuickStartOnboardingView.swift       # First-run onboarding flow
+├── TDEEEquationSettingsView.swift       # TDEE equation + lean body mass config
 ├── Services/
 │   ├── CalorieSummaryCalculator.swift
 │   ├── HealthKitService.swift
@@ -49,43 +44,42 @@ simply-track/
 │   ├── ReminderManager.swift
 │   └── StreakCalculator.swift
 ├── Models/
-│   └── Schemas/                   # SwiftData versioned schemas and migrations
-├── simply_trackApp.swift          # App entry point, model container, recovery logic
-└── Assets.xcassets                # App icons and asset catalog
+│   ├── EntryPayloads.swift
+│   ├── FoodCatalogSeed.swift
+│   ├── TDEEEquation.swift
+│   ├── WeeklyAggregateStatus.swift
+│   └── Schemas/
+│       ├── SimplyTrackSchemaV1.swift
+│       ├── SimplyTrackSchemaV2.swift
+│       ├── SimplyTrackSchemaV3.swift
+│       ├── SimplyTrackSchemaV4.swift
+│       ├── SimplyTrackSchemaV5.swift
+│       ├── SimplyTrackSchemaV6.swift
+│       ├── SimplyTrackSchemaV7.swift
+│       └── SimplyTrackMigrationPlan.swift
+└── simply_trackApp.swift                # App entry, model container setup, persistence fallback
 ```
 
-**Key Components:**
-- **HealthKitSyncCoordinator** — Service for HealthKit authorization, syncing, and active calorie queries
-- **CalorieSummaryCalculator** — Static helper for daily/weekly intake aggregation with fixed week boundaries
-- **UserProfile** — Persistent user data with BMR/TDEE calculations (schema-versioned in V7)
-- **FoodEntry & FoodCatalogItem** — SwiftData models for food tracking
+## Data Model Snapshot
 
-## Data and Sync Notes
+- `FoodEntry`: consumed item, calories, timestamps, source, optional HealthKit sample ID.
+- `FoodCatalogItem`: reusable food templates for quick logging.
+- `UserProfile`: body metrics, target settings, goal mode, sync/reminder preferences.
 
-- Entries are stored locally using SwiftData with explicit schema versioning and automatic migration.
-- HealthKit sync is optional and can be enabled from the app.
-- Active calorie burn adjustment can be toggled in Settings ("Adjust max with active calories burned").
-- Reminder notifications are optional and can be toggled in Settings.
-- The app includes a recovery path for incompatible or corrupted SwiftData stores.
-- On app launch, the app ensures required directories exist and performs schema migrations if needed (V1→V7, including a custom V6→V7 deduplication step).
+Active schema is `SimplyTrackSchemaV7`.
 
-## Architecture
+## Testing
 
-See **AGENTS.md** for detailed documentation of:
-- HealthKitSyncCoordinator service and data flows
-- CalorieSummaryCalculator for aggregating calorie data
-- Burn-adjusted max calorie calculation and formula
-- Schema versioning (V1 to V2) and migration strategy
-- Error handling and recovery paths
+- Unit tests live in `simply-trackTests/simply_trackTests.swift`.
+- Current shared scheme includes the `simply-trackTests` test bundle.
+- Most recent run in this workspace context: 8 passed, 0 failed.
+
+## Additional Docs
+
+- Architecture and service details: `AGENTS.md`
+- Privacy policy: `PRIVACY.md`
+- License: `LICENSE`
 
 ## Support
 
-If Simply Track is useful to you, you can support its development on [Ko-fi](https://ko-fi.com/bitforger).
-
-## License
-
-Simply Track is licensed under the [GNU General Public License v3.0](LICENSE).
-
-## Privacy
-
-Read the [Privacy Policy](PRIVACY.md) to learn how Simply Track handles app and HealthKit data.
+If Simply Track is useful to you, you can support development on [Ko-fi](https://ko-fi.com/bitforger).
