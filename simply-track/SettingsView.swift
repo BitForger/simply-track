@@ -32,6 +32,7 @@ struct SettingsView: View {
     @State private var pendingSaveTask: Task<Void, Never>?
     @State private var showingSaveErrorAlert = false
     @State private var saveErrorMessage: String?
+    @AppStorage("useCloudKitPersistence") private var useCloudKitPersistence = false
     private let healthKitService = HealthKitService()
     private let reminderManager = ReminderManager()
     private let saveDebounceNanoseconds: UInt64 = 350_000_000
@@ -41,18 +42,15 @@ struct SettingsView: View {
     let onOpenQuickStart: () -> Void
     let onRequestHealthKit: () async -> Void
     let hasHealthKitAccess: Bool
-    let includeActiveCaloriesInMax: Bool
 
     init(
         onOpenQuickStart: @escaping () -> Void,
         onRequestHealthKit: @escaping () async -> Void,
-        hasHealthKitAccess: Bool,
-        includeActiveCaloriesInMax: Bool
+        hasHealthKitAccess: Bool
     ) {
         self.onOpenQuickStart = onOpenQuickStart
         self.onRequestHealthKit = onRequestHealthKit
         self.hasHealthKitAccess = hasHealthKitAccess
-        self.includeActiveCaloriesInMax = includeActiveCaloriesInMax
     }
 
     private var profile: UserProfile {
@@ -60,7 +58,9 @@ struct SettingsView: View {
             return existing
         }
 
-        return UserProfile()
+        let fallbackProfile = UserProfile()
+        modelContext.insert(fallbackProfile)
+        return fallbackProfile
     }
 
     @State private var isAgeExpanded = false
@@ -152,17 +152,322 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            privacyAndSyncSection
+            Section("Privacy & Sync") {
+                Toggle("Sync with iCloud", isOn: $useCloudKitPersistence)
+                Text("Data stays on disk either way. Turn this on to sync through iCloud after you relaunch the app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-            quickStartSection
+                Toggle("Enable Health sync", isOn: Binding(
+                    get: { profile.useHealthSync },
+                    set: { profile.useHealthSync = $0 }
+                ))
+                Toggle("Enable reminders", isOn: Binding(
+                    get: { profile.enableReminders },
+                    set: { newValue in
+                        Task {
+                            await updateReminderPreference(enabled: newValue)
+                        }
+                    }
+                ))
+                if let reminderPermissionMessage {
+                    Text(reminderPermissionMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-            profileSection
-            metabolismSection
-            targetsSection
+                    Button("Open Notification Settings") {
+                        openNotificationSettings()
+                    }
+                    .font(.caption)
+                }
+                if !hasHealthKitAccess {
+                    Button("Request HealthKit Access") {
+                        Task { await onRequestHealthKit() }
+                    }
+                    .disabled(!profile.useHealthSync)
+                }
 
-            personalFoodsSection
+                if !profile.useHealthSync {
+                    Text("Turn on Health sync to request and use HealthKit access.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if hasHealthKitAccess {
+                    Text("HealthKit access is enabled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
-            supportSection
+            if !profile.hasCompletedQuickStart {
+                Section("Quick Start") {
+                    Label(
+                        profile.hasCompletedQuickStart ? "Completed" : "Not completed",
+                        systemImage: profile.hasCompletedQuickStart ? "checkmark.circle.fill" : "exclamationmark.circle"
+                    )
+                    Button("Open Quick Start") {
+                        onOpenQuickStart()
+                    }
+                }
+            }
+
+            Section("Profile") {
+                Picker(
+                    "Biological Sex",
+                    selection: Binding(
+                        get: { profile.biologicalSex },
+                        set: { profile.biologicalSex = $0 }
+                    )
+                ) {
+                    ForEach(BiologicalSex.allCases) { sex in
+                        Text(sex.rawValue.capitalized).tag(sex)
+                    }
+                }
+
+                Button {
+                    toggleExpandedPicker(.age)
+                } label: {
+                    HStack {
+                        Text("Age")
+                        Spacer()
+                        Text("\(profile.age) years")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: isAgeExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isAgeExpanded {
+                    Picker("Age", selection: Binding(
+                        get: { profile.age },
+                        set: { profile.age = $0 }
+                    )) {
+                        ForEach(13...100, id: \.self) { age in
+                            Text("\(age) years").tag(age)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(height: 120)
+                }
+
+                Button {
+                    toggleExpandedPicker(.height)
+                } label: {
+                    HStack {
+                        Text("Height")
+                        Spacer()
+                        Text("\(Int(profile.heightCm.rounded())) cm")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: isHeightExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isHeightExpanded {
+                    Picker("Height", selection: Binding(
+                        get: { Int(profile.heightCm.rounded()) },
+                        set: { profile.heightCm = Double($0) }
+                    )) {
+                        ForEach(120...230, id: \.self) { height in
+                            Text("\(height) cm").tag(height)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(height: 120)
+                }
+
+                Button {
+                    toggleExpandedPicker(.weight)
+                } label: {
+                    HStack {
+                        Text("Weight")
+                        Spacer()
+                        Text("\(Int(profile.weightKg.rounded())) kg")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: isWeightExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isWeightExpanded {
+                    Picker("Weight", selection: Binding(
+                        get: { Int(profile.weightKg.rounded()) },
+                        set: { profile.weightKg = Double($0) }
+                    )) {
+                        ForEach(35...250, id: \.self) { weight in
+                            Text("\(weight) kg").tag(weight)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(height: 120)
+                }
+
+                Picker("Activity Level", selection: selectedActivityLevelID) {
+                    ForEach(activityLevels) { level in
+                        Text("\(level.title) (\(level.multiplier.formatted(.number.precision(.fractionLength(3)))))")
+                            .tag(level.id)
+                    }
+                }
+            }
+            Section("Metabolism") {
+                NavigationLink {
+                    TDEEEquationSettingsView(profile: profile)
+                } label: {
+                    LabeledContent("TDEE Equation") {
+                        Text(profile.tdeeEquation.title)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("Estimated BMR: \(Int(profile.estimatedBMR())) cal/day")
+                Text("Estimated TDEE: \(Int(profile.estimatedTDEE())) cal/day")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Targets") {
+                Toggle("Adjust max with active calories burned", isOn: Binding(
+                    get: { profile.includeActiveCaloriesInMax },
+                    set: { profile.includeActiveCaloriesInMax = $0 }
+                ))
+
+                Text(burnAdjustmentSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(
+                    "Goal",
+                    selection: Binding(
+                        get: { profile.nutritionGoal },
+                        set: { profile.nutritionGoal = $0 }
+                    )
+                ) {
+                    ForEach(NutritionGoal.allCases) { goal in
+                        Text(goal.title).tag(goal)
+                    }
+                }
+
+                if profile.nutritionGoal == .loseWeight {
+                    Picker(
+                        "Weekly loss pace",
+                        selection: Binding(
+                            get: { profile.weightLossPace },
+                            set: { profile.weightLossPace = $0 }
+                        )
+                    ) {
+                        ForEach(WeightLossPace.allCases) { pace in
+                            Text(pace.title).tag(pace)
+                        }
+                    }
+                }
+
+                LabeledContent("Recommended daily") {
+                    Text("\(Int(profile.recommendedDailyTarget())) cal")
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Recommended weekly") {
+                    Text("\(Int(profile.recommendedWeeklyTarget())) cal")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Use Recommended Targets") {
+                    profile.dailyCalorieTarget = profile.recommendedDailyTarget()
+                    profile.weeklyCalorieTarget = profile.recommendedWeeklyTarget()
+                    dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
+                    weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        saveErrorMessage = error.localizedDescription
+                        showingSaveErrorAlert = true
+                    }
+                }
+
+                LabeledContent("Daily target") {
+                    HStack(spacing: 8) {
+                        TextField("2,000", text: dailyTargetTextBinding)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedTargetField, equals: .daily)
+                            .frame(width: 100)
+                        Text("cal")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                LabeledContent("Weekly target") {
+                    HStack(spacing: 8) {
+                        TextField("14,000", text: weeklyTargetTextBinding)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedTargetField, equals: .weekly)
+                            .frame(width: 100)
+                        Text("cal")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section("Personal Foods") {
+                Toggle("Auto-save manual entries", isOn: Binding(
+                    get: { profile.autoSaveToCatalog },
+                    set: { profile.autoSaveToCatalog = $0 }
+                ))
+                Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    Task {
+                        await loadHealthImportCandidates()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isLoadingHealthImportCandidates {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(isLoadingHealthImportCandidates ? "Loading Health foods…" : "Import Foods from Health")
+                    }
+                }
+                .disabled(!canImportFoodsFromHealth)
+
+                if let healthImportStatusMessage {
+                    Text(healthImportStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if personalCatalog.isEmpty {
+                    Text("No personal foods yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(personalCatalog) { item in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(item.name)
+                                Text(item.defaultAmountDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(Int(item.caloriesPerDefaultAmount)) cal")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete(perform: deletePersonalCatalogItems)
+                }
+            }
+
+            Button("Support the developer", systemImage: "heart") {
+                if let url = URL(string: "https://ko-fi.com/bitforger") {
+                    openURL(url)
+                }
+            }
         }
         .sheet(isPresented: $showingHealthImportSheet) {
             HealthKitCatalogImportSheet(candidates: healthImportCandidates) { selected in
@@ -223,343 +528,9 @@ struct SettingsView: View {
         .onChange(of: profile.autoSaveToCatalog) { _, _ in scheduleDebouncedProfileSave() }
         .alert("Couldn't Save Settings", isPresented: $showingSaveErrorAlert) {
             Button("OK", role: .cancel) {}
-        } message: {
-            Text(saveErrorMessage ?? "An unknown error occurred while saving your settings.")
         }
         .navigationTitle("Settings")
         
-    }
-
-    private var privacyAndSyncSection: some View {
-        Section("Privacy & Sync") {
-            Toggle("Enable Health sync", isOn: Binding(
-                get: { profile.useHealthSync },
-                set: { profile.useHealthSync = $0 }
-            ))
-            Toggle("Enable reminders", isOn: Binding(
-                get: { profile.enableReminders },
-                set: { newValue in
-                    Task {
-                        await updateReminderPreference(enabled: newValue)
-                    }
-                }
-            ))
-            if let reminderPermissionMessage {
-                Text(reminderPermissionMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button("Open Notification Settings") {
-                    openNotificationSettings()
-                }
-                .font(.caption)
-            }
-            if !hasHealthKitAccess {
-                Button("Request HealthKit Access") {
-                    Task { await onRequestHealthKit() }
-                }
-                .disabled(!profile.useHealthSync)
-            }
-
-            Text(hasHealthKitAccess
-                ? (includeActiveCaloriesInMax
-                    ? "HealthKit access is enabled for sync and active calorie adjustments."
-                    : "HealthKit access is enabled for Health sync.")
-                : (includeActiveCaloriesInMax
-                    ? "Health access is requested for sync and active calorie adjustments."
-                    : "Health access is requested for Health sync. You can turn on active calorie adjustments later."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var quickStartSection: some View {
-        Group {
-            if !profile.hasCompletedQuickStart {
-                Section("Quick Start") {
-                    Label(
-                        profile.hasCompletedQuickStart ? "Completed" : "Not completed",
-                        systemImage: profile.hasCompletedQuickStart ? "checkmark.circle.fill" : "exclamationmark.circle"
-                    )
-                    Button("Open Quick Start") {
-                        onOpenQuickStart()
-                    }
-                }
-            }
-        }
-    }
-
-    private var profileSection: some View {
-        Section("Profile") {
-            Picker(
-                "Biological Sex",
-                selection: Binding(
-                    get: { profile.biologicalSex },
-                    set: { profile.biologicalSex = $0 }
-                )
-            ) {
-                ForEach(BiologicalSex.allCases) { sex in
-                    Text(sex.rawValue.capitalized).tag(sex)
-                }
-            }
-
-            Button {
-                toggleExpandedPicker(.age)
-            } label: {
-                HStack {
-                    Text("Age")
-                    Spacer()
-                    Text("\(profile.age) years")
-                        .foregroundStyle(.secondary)
-                    Image(systemName: isAgeExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isAgeExpanded {
-                Picker("Age", selection: Binding(
-                    get: { profile.age },
-                    set: { profile.age = $0 }
-                )) {
-                    ForEach(13...100, id: \.self) { age in
-                        Text("\(age) years").tag(age)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .labelsHidden()
-                .frame(height: 120)
-            }
-
-            Button {
-                toggleExpandedPicker(.height)
-            } label: {
-                HStack {
-                    Text("Height")
-                    Spacer()
-                    Text("\(Int(profile.heightCm.rounded())) cm")
-                        .foregroundStyle(.secondary)
-                    Image(systemName: isHeightExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isHeightExpanded {
-                Picker("Height", selection: Binding(
-                    get: { Int(profile.heightCm.rounded()) },
-                    set: { profile.heightCm = Double($0) }
-                )) {
-                    ForEach(120...230, id: \.self) { height in
-                        Text("\(height) cm").tag(height)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .labelsHidden()
-                .frame(height: 120)
-            }
-
-            Button {
-                toggleExpandedPicker(.weight)
-            } label: {
-                HStack {
-                    Text("Weight")
-                    Spacer()
-                    Text("\(Int(profile.weightKg.rounded())) kg")
-                        .foregroundStyle(.secondary)
-                    Image(systemName: isWeightExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isWeightExpanded {
-                Picker("Weight", selection: Binding(
-                    get: { Int(profile.weightKg.rounded()) },
-                    set: { profile.weightKg = Double($0) }
-                )) {
-                    ForEach(35...250, id: \.self) { weight in
-                        Text("\(weight) kg").tag(weight)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .labelsHidden()
-                .frame(height: 120)
-            }
-
-            Picker("Activity Level", selection: selectedActivityLevelID) {
-                ForEach(activityLevels) { level in
-                    Text("\(level.title) (\(level.multiplier.formatted(.number.precision(.fractionLength(3)))))")
-                        .tag(level.id)
-                }
-            }
-        }
-    }
-
-    private var metabolismSection: some View {
-        Section("Metabolism") {
-            NavigationLink {
-                TDEEEquationSettingsView(profile: profile)
-            } label: {
-                LabeledContent("TDEE Equation") {
-                    Text(profile.tdeeEquation.title)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Text("Estimated BMR: \(Int(profile.estimatedBMR())) cal/day")
-            Text("Estimated TDEE: \(Int(profile.estimatedTDEE())) cal/day")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var targetsSection: some View {
-        Section("Targets") {
-            Toggle("Adjust max with active calories burned", isOn: Binding(
-                get: { profile.includeActiveCaloriesInMax },
-                set: { profile.includeActiveCaloriesInMax = $0 }
-            ))
-
-            Text(burnAdjustmentSummary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker(
-                "Goal",
-                selection: Binding(
-                    get: { profile.nutritionGoal },
-                    set: { profile.nutritionGoal = $0 }
-                )
-            ) {
-                ForEach(NutritionGoal.allCases) { goal in
-                    Text(goal.title).tag(goal)
-                }
-            }
-
-            if profile.nutritionGoal == .loseWeight {
-                Picker(
-                    "Weekly loss pace",
-                    selection: Binding(
-                        get: { profile.weightLossPace },
-                        set: { profile.weightLossPace = $0 }
-                    )
-                ) {
-                    ForEach(WeightLossPace.allCases) { pace in
-                        Text(pace.title).tag(pace)
-                    }
-                }
-            }
-
-            LabeledContent("Recommended daily") {
-                Text("\(Int(profile.recommendedDailyTarget())) cal")
-                    .foregroundStyle(.secondary)
-            }
-
-            LabeledContent("Recommended weekly") {
-                Text("\(Int(profile.recommendedWeeklyTarget())) cal")
-                    .foregroundStyle(.secondary)
-            }
-
-            Button("Use Recommended Targets") {
-                profile.dailyCalorieTarget = profile.recommendedDailyTarget()
-                profile.weeklyCalorieTarget = profile.recommendedWeeklyTarget()
-                dailyTargetInput = formattedCalories(profile.dailyCalorieTarget)
-                weeklyTargetInput = formattedCalories(profile.weeklyCalorieTarget)
-                do {
-                    try modelContext.save()
-                } catch {
-                    saveErrorMessage = error.localizedDescription
-                    showingSaveErrorAlert = true
-                }
-            }
-
-            LabeledContent("Daily target") {
-                HStack(spacing: 8) {
-                    TextField("2,000", text: dailyTargetTextBinding)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .focused($focusedTargetField, equals: .daily)
-                        .frame(width: 100)
-                    Text("cal")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            LabeledContent("Weekly target") {
-                HStack(spacing: 8) {
-                    TextField("14,000", text: weeklyTargetTextBinding)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .focused($focusedTargetField, equals: .weekly)
-                        .frame(width: 100)
-                    Text("cal")
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var supportSection: some View {
-        Section {
-            Button("Support the developer", systemImage: "heart") {
-                if let url = URL(string: "https://ko-fi.com/bitforger") {
-                    openURL(url)
-                }
-            }
-        }
-    }
-
-    private var personalFoodsSection: some View {
-        Section("Personal Foods") {
-            Toggle("Auto-save manual entries", isOn: Binding(
-                get: { profile.autoSaveToCatalog },
-                set: { profile.autoSaveToCatalog = $0 }
-            ))
-            Text("New foods you log manually are saved to your Quick Pick list for fast re-entry.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button {
-                Task {
-                    await loadHealthImportCandidates()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if isLoadingHealthImportCandidates {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(isLoadingHealthImportCandidates ? "Loading Health foods…" : "Import Foods from Health")
-                }
-            }
-            .disabled(!canImportFoodsFromHealth)
-
-            if let healthImportStatusMessage {
-                Text(healthImportStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if personalCatalog.isEmpty {
-                Text("No personal foods yet.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(personalCatalog) { item in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(item.name)
-                            Text(item.defaultAmountDescription)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(Int(item.caloriesPerDefaultAmount)) cal")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onDelete(perform: deletePersonalCatalogItems)
-            }
-        }
     }
 
     private enum ExpandedPickerField {
@@ -635,7 +606,10 @@ struct SettingsView: View {
     private func flushPendingProfileSave() {
         pendingSaveTask?.cancel()
         pendingSaveTask = nil
-        commitProfileChangesImmediately()
+        Task { @MainActor in
+            await Task.yield()
+            commitProfileChangesImmediately()
+        }
     }
 
     private func commitProfileChangesImmediately() {
@@ -656,7 +630,15 @@ struct SettingsView: View {
         isUpdatingReminderPreference = true
         defer { isUpdatingReminderPreference = false }
 
-        let status = await reminderManager.updateReminderSchedule(enabled: enabled)
+        if !enabled {
+            profile.enableReminders = false
+            reminderPermissionMessage = nil
+            _ = await reminderManager.updateReminderSchedule(enabled: false)
+            commitProfileChangesImmediately()
+            return
+        }
+
+        let status = await reminderManager.updateReminderSchedule(enabled: true)
         switch status {
         case .scheduled:
             profile.enableReminders = true
@@ -841,9 +823,8 @@ struct SettingsView: View {
     NavigationStack {
         SettingsView(
             onOpenQuickStart: {},
-            onRequestHealthKit: {},
-            hasHealthKitAccess: false,
-            includeActiveCaloriesInMax: false
+                onRequestHealthKit: {},
+                hasHealthKitAccess: false
         )
     }
     .modelContainer(for: [UserProfile.self], inMemory: true)

@@ -8,16 +8,14 @@
 import Foundation
 import SwiftData
 
-enum SimplyTrackSchemaV6: VersionedSchema {
-    static var versionIdentifier = Schema.Version(6, 0, 0)
-
+enum SimplyTrackSchemaV6 {
     static var models: [any PersistentModel.Type] {
         [FoodEntry.self, FoodCatalogItem.self, UserProfile.self]
     }
 
     @Model
     final class FoodEntry {
-        var id: UUID = UUID()
+        @Attribute(.unique) var id: UUID = UUID()
         var foodName: String = ""
         var amountDescription: String = ""
         var calories: Double = 0
@@ -49,7 +47,7 @@ enum SimplyTrackSchemaV6: VersionedSchema {
 
     @Model
     final class FoodCatalogItem {
-        var id: UUID = UUID()
+        @Attribute(.unique) var id: UUID = UUID()
         var name: String = ""
         var defaultAmountDescription: String = ""
         var caloriesPerDefaultAmount: Double = 0
@@ -72,7 +70,7 @@ enum SimplyTrackSchemaV6: VersionedSchema {
 
     @Model
     final class UserProfile {
-        var id: UUID = UUID()
+        @Attribute(.unique) var id: UUID = UUID()
         var age: Int = 30
         var sexRawValue: String = BiologicalSex.male.rawValue
         var heightCm: Double = 175

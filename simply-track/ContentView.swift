@@ -67,10 +67,9 @@ struct ContentView: View {
                 SettingsView(
                     onOpenQuickStart: { showingQuickStartSheet = true },
                     onRequestHealthKit: {
-                        await authorizeAndSyncHealthKit()
+                        _ = await authorizeAndSyncHealthKit()
                     },
-                    hasHealthKitAccess: syncCoordinator.hasHealthKitAccess,
-                    includeActiveCaloriesInMax: profile.includeActiveCaloriesInMax
+                    hasHealthKitAccess: syncCoordinator.hasHealthKitAccess
                 )
             }
             .tabItem {
@@ -489,11 +488,9 @@ private struct PersistenceStatusBannerView: View {
     private var modeDescription: String {
         switch status.mode {
         case .cloudKitBacked:
-            return "CloudKit-backed storage is active."
+            return "CloudKit sync is active for this device."
         case .localOnly:
-            return "The app is using local storage only, so changes will not sync to iCloud."
-        case .inMemoryOnly:
-            return "The app is using temporary in-memory storage, so changes will be lost when it closes."
+            return "The app is using local on-disk storage, so changes stay on this device unless CloudKit sync is enabled."
         }
     }
 }

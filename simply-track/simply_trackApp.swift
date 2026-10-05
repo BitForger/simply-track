@@ -15,10 +15,9 @@ import SQLite3
     enum Mode: Equatable {
         case cloudKitBacked
         case localOnly
-        case inMemoryOnly
     }
 
-    var mode: Mode = .cloudKitBacked
+    var mode: Mode = .localOnly
     var error: PersistenceError?
     var isCloudKitQuotaError: Bool = false
 
@@ -43,7 +42,7 @@ import SQLite3
             case .cloudKitQuotaExceeded:
                 return "You don't have enough iCloud storage space. Free up space in iCloud Settings, then relaunch the app."
             case .cloudKitUnavailable:
-                return "CloudKit sync is disabled. Data is stored locally only."
+                return "CloudKit sync is unavailable. Data is stored locally on this device."
             case .localStorageFailed(let details):
                 return details
             }
@@ -54,7 +53,7 @@ import SQLite3
             case .cloudKitQuotaExceeded:
                 return "Delete files or photos from iCloud, or upgrade your iCloud storage plan."
             case .cloudKitUnavailable:
-                return "Check your internet connection and iCloud account settings."
+                return "You can keep using the app locally, or turn CloudKit sync back on in Settings after checking your iCloud account settings."
             case .localStorageFailed:
                 return "Try restarting the app. If the problem persists, contact support."
             }
@@ -66,6 +65,8 @@ import SQLite3
 struct simply_trackApp: App {
     @State private var persistenceStatus: PersistenceStatus
     private let sharedModelContainer: ModelContainer
+
+    private static let cloudKitPersistenceEnabledKey = "useCloudKitPersistence"
 
     init() {
         let status = PersistenceStatus()
@@ -230,12 +231,17 @@ struct simply_trackApp: App {
         return isQuotaCode && isCloudKitDomain
     }
 
-    /// Creates and returns a ModelContainer, updating persistenceStatus on fallback.
+    private static var isCloudKitPersistenceEnabled: Bool {
+        UserDefaults.standard.bool(forKey: cloudKitPersistenceEnabledKey)
+    }
+
+    /// Creates and returns a ModelContainer, updating persistenceStatus for the active storage mode.
     private static func createModelContainer(persistenceStatus: PersistenceStatus) -> ModelContainer {
         print("DEBUG: Initializing SimplyTrack app with SwiftData")
         Self.ensureAppSupportDirectoryExists()
 
-        let schema = Schema(SimplyTrackSchemaV6.models)
+        let schema = Schema(SimplyTrackSchemaV7.models)
+        let useCloudKit = isCloudKitPersistenceEnabled
 
         let cloudBackedPersistentConfiguration = ModelConfiguration(
             schema: schema,
@@ -243,44 +249,49 @@ struct simply_trackApp: App {
             cloudKitDatabase: .automatic
         )
 
-        let localPersistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let localPersistentConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none
+        )
 
-        // Step 1: Try CloudKit-backed store
-        do {
-            print("INFO: Attempting to initialize CloudKit-backed SwiftData store")
-            let container = try ModelContainer(
-                for: schema,
-                migrationPlan: SimplyTrackMigrationPlan.self,
-                configurations: [cloudBackedPersistentConfiguration]
-            )
-            persistenceStatus.mode = .cloudKitBacked
-            persistenceStatus.error = nil
-            persistenceStatus.isCloudKitQuotaError = false
-            print("INFO: Successfully initialized CloudKit-backed store")
-            return container
-        } catch {
-            // Detect if this is a storage quota error
-            let isQuotaError = Self.isCloudKitQuotaError(error)
-            persistenceStatus.isCloudKitQuotaError = isQuotaError
+        if useCloudKit {
+            do {
+                print("INFO: Attempting to initialize CloudKit-backed SwiftData store")
+                let container = try ModelContainer(
+                    for: schema,
+                    configurations: [cloudBackedPersistentConfiguration]
+                )
+                persistenceStatus.mode = .cloudKitBacked
+                persistenceStatus.error = nil
+                persistenceStatus.isCloudKitQuotaError = false
+                print("INFO: Successfully initialized CloudKit-backed store")
+                return container
+            } catch {
+                let isQuotaError = Self.isCloudKitQuotaError(error)
+                persistenceStatus.isCloudKitQuotaError = isQuotaError
 
-            if isQuotaError {
-                print("ERROR: CloudKit storage quota exceeded: \(error)")
-                persistenceStatus.error = .cloudKitQuotaExceeded
-            } else {
-                print("WARNING: Failed to open CloudKit-backed SwiftData store: \(error)")
-                persistenceStatus.error = .cloudKitUnavailable(error.localizedDescription)
+                if isQuotaError {
+                    print("ERROR: CloudKit storage quota exceeded: \(error)")
+                    persistenceStatus.error = .cloudKitQuotaExceeded
+                } else {
+                    print("WARNING: Failed to open CloudKit-backed SwiftData store: \(error)")
+                    persistenceStatus.error = .cloudKitUnavailable(error.localizedDescription)
+                }
             }
         }
 
-        // Step 2: Try local-only persistent store
+        // Local on-disk store is the default and the fallback when CloudKit is off or unavailable.
         do {
             print("INFO: Attempting to initialize local-only persistent SwiftData store")
             let container = try ModelContainer(
                 for: schema,
-                migrationPlan: SimplyTrackMigrationPlan.self,
                 configurations: [localPersistentConfiguration]
             )
             persistenceStatus.mode = .localOnly
+            if !useCloudKit {
+                persistenceStatus.error = nil
+            }
             print("INFO: Successfully initialized local-only persistent store")
             return container
         } catch {
@@ -295,31 +306,20 @@ struct simply_trackApp: App {
             do {
                 let recoveredContainer = try ModelContainer(
                     for: schema,
-                    migrationPlan: SimplyTrackMigrationPlan.self,
                     configurations: [localPersistentConfiguration]
                 )
                 persistenceStatus.mode = .localOnly
-                persistenceStatus.error = nil
+                if !useCloudKit {
+                    persistenceStatus.error = nil
+                }
                 persistenceStatus.isCloudKitQuotaError = false
                 print("INFO: Successfully recovered local-only persistent store after cleanup")
                 return recoveredContainer
             } catch {
                 print("ERROR: Local persistent store recovery failed: \(error)")
-                persistenceStatus.mode = .inMemoryOnly
+                persistenceStatus.mode = .localOnly
                 persistenceStatus.error = .localStorageFailed(error.localizedDescription)
-
-                let inMemoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-                do {
-                    let inMemoryContainer = try ModelContainer(
-                        for: schema,
-                        migrationPlan: SimplyTrackMigrationPlan.self,
-                        configurations: [inMemoryConfiguration]
-                    )
-                    print("WARNING: Falling back to in-memory SwiftData store; changes will not persist between launches")
-                    return inMemoryContainer
-                } catch {
-                    preconditionFailure("Could not create ModelContainer even in memory after local storage recovery failure: \(error)")
-                }
+                preconditionFailure("Could not create a persistent ModelContainer after local storage recovery failure: \(error)")
             }
         }
     }

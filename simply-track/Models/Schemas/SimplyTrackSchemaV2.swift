@@ -8,9 +8,7 @@
 import Foundation
 import SwiftData
 
-enum SimplyTrackSchemaV2: VersionedSchema {
-    static var versionIdentifier = Schema.Version(2, 0, 0)
-
+enum SimplyTrackSchemaV2 {
     static var models: [any PersistentModel.Type] {
         [FoodEntry.self, FoodCatalogItem.self, UserProfile.self]
     }
