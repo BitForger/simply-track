@@ -811,7 +811,7 @@ private struct HealthImportCandidate: Identifiable {
     let amountDescription: String
     let calories: Double
 
-    init(_ record: HealthImportCandidateRecord) {
+    nonisolated init(_ record: HealthImportCandidateRecord) {
         self.name = record.name
         self.amountDescription = record.amountDescription
         self.calories = record.calories
