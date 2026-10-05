@@ -32,17 +32,19 @@ final class HealthKitSyncCoordinator: ObservableObject {
         UserDefaults.standard.set(liveStatus, forKey: Self.hasHealthKitAccessKey)
     }
 
-    func requestAuthorization(includeActiveCalories: Bool) async {
+    func requestAuthorization(includeActiveCalories: Bool) async -> Bool {
         do {
             try await healthKitService.requestAuthorization(includeActiveCalories: includeActiveCalories)
             refreshAuthorizationStatus()
             syncMessage = includeActiveCalories
                 ? "HealthKit access granted for sync and active calorie adjustments."
                 : "HealthKit access granted for Health sync."
+            return true
         } catch {
             hasHealthKitAccess = false
             UserDefaults.standard.set(false, forKey: Self.hasHealthKitAccessKey)
             syncMessage = "HealthKit authorization failed: \(error.localizedDescription)"
+            return false
         }
     }
 

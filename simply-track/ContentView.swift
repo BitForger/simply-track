@@ -184,11 +184,16 @@ struct ContentView: View {
             return false
         }
 
-        await syncCoordinator.requestAuthorization(includeActiveCalories: profile.includeActiveCaloriesInMax)
+        let granted = await syncCoordinator.requestAuthorization(includeActiveCalories: profile.includeActiveCaloriesInMax)
+        syncCoordinator.refreshAuthorizationStatus()
         guard syncCoordinator.hasHealthKitAccess else {
             profile.useHealthSync = false
             syncCoordinator.syncMessage = "HealthKit access wasn't granted. Health sync has been turned off."
             return false
+        }
+
+        if profile.includeActiveCaloriesInMax, !granted {
+            syncCoordinator.syncMessage = "HealthKit sync is on, but active-calorie access wasn't granted yet. Burned calories will stay off until you allow them in Health settings."
         }
 
         await refreshFromHealthKit()
@@ -343,6 +348,18 @@ struct ContentView: View {
         guard profile.useHealthSync, profile.includeActiveCaloriesInMax else {
             clearActiveCaloriesState()
             return
+        }
+
+        let granted = await syncCoordinator.requestAuthorization(includeActiveCalories: true)
+        syncCoordinator.refreshAuthorizationStatus()
+        guard syncCoordinator.hasHealthKitAccess else {
+            clearActiveCaloriesState()
+            syncCoordinator.syncMessage = "HealthKit access is needed to read active calories."
+            return
+        }
+
+        if !granted {
+            syncCoordinator.syncMessage = "HealthKit can read your daily calorie burn only after you allow Active Energy access."
         }
 
         let now = Date.now
