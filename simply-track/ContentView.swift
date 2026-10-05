@@ -306,36 +306,7 @@ struct ContentView: View {
         let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: todayStart) ?? todayStart
         let payloads = await syncCoordinator.pullLatestEntries(from: startDate, to: .now)
 
-        if !payloads.isEmpty {
-            for payload in payloads {
-                if let match = entries.first(where: {
-                    $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier || $0.id == payload.id
-                }) {
-                    if payload.updatedAt >= match.updatedAt {
-                        match.foodName = payload.foodName
-                        match.amountDescription = payload.amountDescription
-                        match.calories = payload.calories
-                        match.consumedAt = payload.consumedAt
-                        match.updatedAt = payload.updatedAt
-                        match.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
-                        match.source = "healthKit"
-                    }
-                } else {
-                    modelContext.insert(
-                        FoodEntry(
-                            id: payload.id,
-                            foodName: payload.foodName,
-                            amountDescription: payload.amountDescription,
-                            calories: payload.calories,
-                            consumedAt: payload.consumedAt,
-                            updatedAt: payload.updatedAt,
-                            source: "healthKit",
-                            healthKitSampleIdentifier: payload.healthKitSampleIdentifier
-                        )
-                    )
-                }
-            }
-        }
+        mergePayloadsIntoEntries(payloads, sourceOverride: "healthKit")
 
         if profile.includeActiveCaloriesInMax {
             await refreshActiveCaloriesBurned()
@@ -389,32 +360,47 @@ struct ContentView: View {
         guard profile.useHealthSync else { return }
         let mergedPayloads = await syncCoordinator.sync(localEntries: snapshots)
 
-        for payload in mergedPayloads {
-            if let match = entries.first(where: { $0.id == payload.id || $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier }) {
-                if payload.updatedAt >= match.updatedAt {
-                    match.foodName = payload.foodName
-                    match.amountDescription = payload.amountDescription
-                    match.calories = payload.calories
-                    match.consumedAt = payload.consumedAt
-                    match.updatedAt = payload.updatedAt
-                    match.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
-                    match.source = payload.source
-                }
+        mergePayloadsIntoEntries(mergedPayloads)
+    }
+
+    private func mergePayloadsIntoEntries(_ payloads: [CalorieEntryPayload], sourceOverride: String? = nil) {
+        for payload in payloads {
+            if let existing = existingEntry(matching: payload) {
+                apply(payload: payload, to: existing, sourceOverride: sourceOverride)
             } else {
-                modelContext.insert(
-                    FoodEntry(
-                        id: payload.id,
-                        foodName: payload.foodName,
-                        amountDescription: payload.amountDescription,
-                        calories: payload.calories,
-                        consumedAt: payload.consumedAt,
-                        updatedAt: payload.updatedAt,
-                        source: payload.source,
-                        healthKitSampleIdentifier: payload.healthKitSampleIdentifier
-                    )
-                )
+                modelContext.insert(makeEntry(from: payload, sourceOverride: sourceOverride))
             }
         }
+    }
+
+    private func existingEntry(matching payload: CalorieEntryPayload) -> FoodEntry? {
+        entries.first {
+            $0.id == payload.id || $0.healthKitSampleIdentifier == payload.healthKitSampleIdentifier
+        }
+    }
+
+    private func apply(payload: CalorieEntryPayload, to entry: FoodEntry, sourceOverride: String?) {
+        guard payload.updatedAt >= entry.updatedAt else { return }
+        entry.foodName = payload.foodName
+        entry.amountDescription = payload.amountDescription
+        entry.calories = payload.calories
+        entry.consumedAt = payload.consumedAt
+        entry.updatedAt = payload.updatedAt
+        entry.healthKitSampleIdentifier = payload.healthKitSampleIdentifier
+        entry.source = sourceOverride ?? payload.source
+    }
+
+    private func makeEntry(from payload: CalorieEntryPayload, sourceOverride: String?) -> FoodEntry {
+        FoodEntry(
+            id: payload.id,
+            foodName: payload.foodName,
+            amountDescription: payload.amountDescription,
+            calories: payload.calories,
+            consumedAt: payload.consumedAt,
+            updatedAt: payload.updatedAt,
+            source: sourceOverride ?? payload.source,
+            healthKitSampleIdentifier: payload.healthKitSampleIdentifier
+        )
     }
 
     private func deduplicatedSnapshots(_ snapshots: [CalorieEntryPayload]) -> [CalorieEntryPayload] {
@@ -514,5 +500,5 @@ private struct PersistenceStatusBannerView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [FoodEntry.self, FoodCatalogItem.self, UserProfile.self], inMemory: true)
+        .modelContainer(for: [FoodEntry.self, FoodCatalogItem.self, UserProfile.self])
 }

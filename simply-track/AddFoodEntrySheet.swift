@@ -36,13 +36,6 @@ struct AddFoodEntrySheet: View {
                 if !foodCatalog.isEmpty {
                     Picker("Quick pick", selection: $selectedCatalogID) {
                         Text("None").tag(UUID?.none)
-                        if !suggestedCatalog.isEmpty {
-                            Section("Suggested") {
-                                ForEach(suggestedCatalog) { item in
-                                    Text(item.name).tag(UUID?.some(item.id))
-                                }
-                            }
-                        }
                         if !personalCatalog.isEmpty {
                             Section("Your Foods") {
                                 ForEach(personalCatalog) { item in
@@ -50,6 +43,14 @@ struct AddFoodEntrySheet: View {
                                 }
                             }
                         }
+                        if !suggestedCatalog.isEmpty {
+                            Section("Suggested") {
+                                ForEach(suggestedCatalog) { item in
+                                    Text(item.name).tag(UUID?.some(item.id))
+                                }
+                            }
+                        }
+                        
                     }
                     .onChange(of: selectedCatalogID) { _, newValue in
                         guard let id = newValue, let item = foodCatalog.first(where: { $0.id == id }) else { return }
