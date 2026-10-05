@@ -10,18 +10,28 @@ import Combine
 
 @MainActor
 final class HealthKitSyncCoordinator: ObservableObject {
-    @Published var syncMessage = ""
+    @Published var syncMessage: String {
+        didSet {
+            UserDefaults.standard.set(syncMessage, forKey: Self.lastHealthKitSyncMessageKey)
+        }
+    }
     @Published var hasHealthKitAccess: Bool
+
     private let healthKitService = HealthKitService()
 
     private static let hasHealthKitAccessKey = "hasHealthKitAccess"
+    private static let lastHealthKitSyncMessageKey = "lastHealthKitSyncMessage"
+    private static let defaultSyncMessage = "Health sync has not run yet."
 
     init() {
-        let persisted = UserDefaults.standard.bool(forKey: Self.hasHealthKitAccessKey)
+        let persistedAccess = UserDefaults.standard.bool(forKey: Self.hasHealthKitAccessKey)
+        let persistedSyncMessage = UserDefaults.standard.string(forKey: Self.lastHealthKitSyncMessageKey)
         let liveStatus = healthKitService.hasCurrentAuthorization()
+
+        syncMessage = persistedSyncMessage ?? Self.defaultSyncMessage
         hasHealthKitAccess = liveStatus
 
-        if persisted != liveStatus {
+        if persistedAccess != liveStatus {
             UserDefaults.standard.set(liveStatus, forKey: Self.hasHealthKitAccessKey)
         }
     }
@@ -36,23 +46,29 @@ final class HealthKitSyncCoordinator: ObservableObject {
         do {
             try await healthKitService.requestAuthorization(includeActiveCalories: includeActiveCalories)
             refreshAuthorizationStatus()
-            syncMessage = includeActiveCalories
+            recordSyncStatus(
+                includeActiveCalories
                 ? "HealthKit access granted for sync and active calorie adjustments."
                 : "HealthKit access granted for Health sync."
+            )
             return true
         } catch {
             hasHealthKitAccess = false
             UserDefaults.standard.set(false, forKey: Self.hasHealthKitAccessKey)
-            syncMessage = "HealthKit authorization failed: \(error.localizedDescription)"
+            recordSyncStatus("HealthKit authorization failed: \(error.localizedDescription)")
             return false
         }
     }
 
     func pullLatestEntries(from startDate: Date, to endDate: Date) async -> [CalorieEntryPayload] {
         do {
-            return try await healthKitService.fetchEntries(from: startDate, to: endDate)
+            let payloads = try await healthKitService.fetchEntries(from: startDate, to: endDate)
+            recordSyncStatus(
+                "Last HealthKit pull: \(payloads.count) entries at \(Date.now.formatted(date: .omitted, time: .shortened))"
+            )
+            return payloads
         } catch {
-            syncMessage = "HealthKit pull failed: \(error.localizedDescription)"
+            recordSyncStatus("HealthKit pull failed: \(error.localizedDescription)")
             return []
         }
     }
@@ -61,19 +77,29 @@ final class HealthKitSyncCoordinator: ObservableObject {
         do {
             try await healthKitService.deleteEntries(entries)
         } catch {
-            syncMessage = "HealthKit delete failed: \(error.localizedDescription)"
+            recordSyncStatus("HealthKit delete failed: \(error.localizedDescription)")
         }
     }
 
     func sync(localEntries: [CalorieEntryPayload]) async -> [CalorieEntryPayload] {
         do {
             let merged = try await healthKitService.syncReadFirst(localEntries: localEntries)
-            syncMessage = "Last sync: \(Date.now.formatted(date: .omitted, time: .shortened))"
+            recordSyncStatus("Last HealthKit merge sync: \(Date.now.formatted(date: .omitted, time: .shortened))")
             return merged
         } catch {
-            syncMessage = "HealthKit sync failed: \(error.localizedDescription)"
+            recordSyncStatus("HealthKit sync failed: \(error.localizedDescription)")
             return localEntries
         }
+    }
+
+    func updateActiveCaloriesSyncStatus(dailyCalories: Double, weeklyCalories: Double, syncedAt: Date = .now) {
+        recordSyncStatus(
+            "Last sync: \(syncedAt.formatted(date: .omitted, time: .shortened))"
+        )
+    }
+
+    func recordSyncStatus(_ message: String) {
+        syncMessage = message
     }
 
     func pullActiveCaloriesBurned(from startDate: Date, to endDate: Date) async -> ActiveCaloriesReadResult {
@@ -82,7 +108,7 @@ final class HealthKitSyncCoordinator: ObservableObject {
             return ActiveCaloriesReadResult(calories: calories, fallbackNote: nil)
         } catch {
             let note = "Active calories unavailable right now. Using base targets only until Health data is available."
-            syncMessage = "HealthKit active calories read failed: \(error.localizedDescription)"
+            recordSyncStatus("HealthKit active calories read failed: \(error.localizedDescription)")
             return ActiveCaloriesReadResult(calories: 0, fallbackNote: note)
         }
     }

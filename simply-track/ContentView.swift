@@ -124,7 +124,7 @@ struct ContentView: View {
 
             Task {
                 guard profile.useHealthSync else { return }
-                await refreshActiveCaloriesBurned()
+                await refreshActiveCaloriesBurned(requestAuthorizationIfNeeded: true)
             }
         }
     }
@@ -287,29 +287,39 @@ struct ContentView: View {
             modelContext.insert(newEntry)
         }
 
-        if profile.includeActiveCaloriesInMax {
-            await refreshActiveCaloriesBurned()
-        } else {
-            clearActiveCaloriesState()
-        }
+        // Keep active-calorie values warm on launch/resume so Home reflects current Health data.
+        await refreshActiveCaloriesBurned(requestAuthorizationIfNeeded: false)
     }
 
-    private func refreshActiveCaloriesBurned() async {
-        guard profile.useHealthSync, profile.includeActiveCaloriesInMax else {
+    private func refreshActiveCaloriesBurned(requestAuthorizationIfNeeded: Bool = true) async {
+        guard profile.useHealthSync else {
             clearActiveCaloriesState()
             return
         }
 
-        let granted = await syncCoordinator.requestAuthorization(includeActiveCalories: true)
-        syncCoordinator.refreshAuthorizationStatus()
+        let granted: Bool
+        if requestAuthorizationIfNeeded {
+            granted = await syncCoordinator.requestAuthorization(includeActiveCalories: true)
+            syncCoordinator.refreshAuthorizationStatus()
+        } else {
+            syncCoordinator.refreshAuthorizationStatus()
+            granted = syncCoordinator.hasHealthKitAccess
+        }
+
         guard syncCoordinator.hasHealthKitAccess else {
             clearActiveCaloriesState()
-            syncCoordinator.syncMessage = "HealthKit access is needed to read active calories."
+            syncCoordinator.recordSyncStatus(
+                requestAuthorizationIfNeeded
+                ? "HealthKit access is needed to read active calories."
+                : "Waiting for HealthKit access to sync active calories."
+            )
             return
         }
 
-        if !granted {
-            syncCoordinator.syncMessage = "HealthKit can read your daily calorie burn only after you allow Active Energy access."
+        if requestAuthorizationIfNeeded && !granted {
+            syncCoordinator.recordSyncStatus(
+                "HealthKit can read your daily calorie burn only after you allow Active Energy access."
+            )
         }
 
         let now = Date.now
@@ -324,6 +334,10 @@ struct ContentView: View {
 
         dailyActiveCaloriesBurned = dailyResult.calories
         weeklyActiveCaloriesBurned = weeklyResult.calories
+        syncCoordinator.updateActiveCaloriesSyncStatus(
+            dailyCalories: dailyResult.calories,
+            weeklyCalories: weeklyResult.calories
+        )
 
         let fallbackNotes = [dailyResult.fallbackNote, weeklyResult.fallbackNote]
             .compactMap { $0 }

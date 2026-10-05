@@ -97,11 +97,9 @@ struct HomeDashboardView: View {
                 metabolismCard
             }
 
-            if !syncMessage.isEmpty {
-                Section("Sync") {
-                    Text(syncMessage)
-                        .font(.footnote)
-                }
+            Section("Sync") {
+                Text(syncMessage.isEmpty ? "Health sync has not run yet." : syncMessage)
+                    .font(.footnote)
             }
         }
         .navigationTitle("Simply Track")

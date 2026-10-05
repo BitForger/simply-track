@@ -187,3 +187,8 @@ Most recent run in this workspace context: 8 passed, 0 failed.
 
 Last updated: October 2026
 Active schema version: 7.0.0
+
+## Recent Behavior Note (Oct 2026)
+
+- Home keeps the `Sync` section visible at all times and shows the last known HealthKit sync status message.
+- When Health sync is enabled, app launch/resume performs an initial passive active-calorie pull so burn-adjusted values stay current without forcing a new authorization prompt.

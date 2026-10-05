@@ -83,3 +83,8 @@ Active schema is `SimplyTrackSchemaV7`.
 ## Support
 
 If Simply Track is useful to you, you can support development on [Ko-fi](https://ko-fi.com/bitforger).
+
+## Sync UX Notes (Oct 2026)
+
+- Home always shows a `Sync` status section with the last known HealthKit sync result.
+- If Health sync is enabled, launch/resume performs a passive active-calorie pull to keep Home targets in sync.
