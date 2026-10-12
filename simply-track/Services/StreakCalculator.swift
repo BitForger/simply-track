@@ -25,10 +25,9 @@ struct StreakCalculator {
     }
 
     static func weekLoggedDays(entries: [FoodEntry], around date: Date, calendar: Calendar = .gregorianSundayStart) -> Int {
-        let range = CalorieSummaryCalculator.weekRange(for: date, calendar: calendar)
         let loggedDays = Set(
             entries
-                .filter { range.contains($0.consumedAt) }
+                .filter { CalorieSummaryCalculator.isInWeek($0.consumedAt, around: date, calendar: calendar) }
                 .map { calendar.startOfDay(for: $0.consumedAt) }
         )
         return loggedDays.count

@@ -61,7 +61,6 @@ final class simply_trackTests: XCTestCase {
 
         context.insert(older)
         context.insert(newer)
-        try context.save()
 
         try deduplicateV6Records(in: context)
 
@@ -93,7 +92,6 @@ final class simply_trackTests: XCTestCase {
 
         context.insert(seeded)
         context.insert(userAdded)
-        try context.save()
 
         try deduplicateV6Records(in: context)
 
@@ -127,7 +125,6 @@ final class simply_trackTests: XCTestCase {
 
         context.insert(lowerScore)
         context.insert(higherScore)
-        try context.save()
 
         try deduplicateV6Records(in: context)
 
@@ -146,11 +143,16 @@ final class simply_trackTests: XCTestCase {
         utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
         utcCalendar.firstWeekday = 1
         let range = CalorieSummaryCalculator.weekRange(for: wednesday, calendar: utcCalendar)
+        let saturdayEvening = makeUTCDate(year: 2026, month: 10, day: 10, hour: 23, minute: 59)
+        let nextSundayMidnight = makeUTCDate(year: 2026, month: 10, day: 11, hour: 0, minute: 0)
+        let entries = [
+            SimplyTrackSchemaV7.FoodEntry(foodName: "Saturday", amountDescription: "1 serving", calories: 200, consumedAt: saturdayEvening),
+            SimplyTrackSchemaV7.FoodEntry(foodName: "Next Sunday", amountDescription: "1 serving", calories: 900, consumedAt: nextSundayMidnight)
+        ]
 
         XCTAssertEqual(range.start, makeUTCDate(year: 2026, month: 10, day: 4, hour: 0))
         XCTAssertEqual(range.end, makeUTCDate(year: 2026, month: 10, day: 11, hour: 0))
-        XCTAssertTrue(range.contains(makeUTCDate(year: 2026, month: 10, day: 10, hour: 23, minute: 59)))
-        XCTAssertFalse(range.contains(makeUTCDate(year: 2026, month: 10, day: 11, hour: 0, minute: 0)))
+        XCTAssertEqual(CalorieSummaryCalculator.weeklyTotal(from: entries, around: wednesday, calendar: utcCalendar), 200)
     }
 
     func testDailyAndWeeklyTotalsUseExpectedBoundaries() {

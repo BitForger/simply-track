@@ -20,10 +20,14 @@ struct CalorieSummaryCalculator {
         return DateInterval(start: start, end: end)
     }
 
+    static func isInWeek(_ date: Date, around referenceDate: Date, calendar: Calendar = .gregorianSundayStart) -> Bool {
+        let range = weekRange(for: referenceDate, calendar: calendar)
+        return range.start <= date && date < range.end
+    }
+
     static func weeklyTotal(from entries: [FoodEntry], around date: Date, calendar: Calendar = .gregorianSundayStart) -> Double {
-        let range = weekRange(for: date, calendar: calendar)
         return entries
-            .filter { range.contains($0.consumedAt) }
+            .filter { isInWeek($0.consumedAt, around: date, calendar: calendar) }
             .reduce(0) { $0 + $1.calories }
     }
 
