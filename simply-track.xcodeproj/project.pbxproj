@@ -10,6 +10,16 @@
 		842CAD6F305B5ADC00740400 /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = 842CAD6E305B5ADC00740400 /* AGENTS.md */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		84A1D1013072000000C0DCD6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8490351230411B95009B4195 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 842CAD3A305A2B4600740400;
+			remoteInfo = "simply-track";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		841BC60B3071E90300C0DCD6 /* simply-trackTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "simply-trackTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		842CAD3B305A2B4600740400 /* simply-track.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "simply-track.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,6 +105,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				84A1D1023072000000C0DCD6 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				841BC60C3071E90300C0DCD6 /* simply-trackTests */,
@@ -200,6 +211,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		84A1D1023072000000C0DCD6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 842CAD3A305A2B4600740400 /* simply-track */;
+			targetProxy = 84A1D1013072000000C0DCD6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		841BC6103071E90300C0DCD6 /* Debug */ = {
