@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Pasa · Ring & Bowl · foreground (dark): cream glyph -->
+  <circle cx="512" cy="512" r="330" fill="none" stroke="#FDF3E3" stroke-width="56"
+          stroke-linecap="round" stroke-dasharray="1555 2073" transform="rotate(135 512 512)"/>
+  <path d="M452 520 V400" stroke="#FDF3E3" stroke-width="24" stroke-linecap="round"/>
+  <path d="M512 520 V370" stroke="#FDF3E3" stroke-width="24" stroke-linecap="round"/>
+  <path d="M572 520 V400" stroke="#FDF3E3" stroke-width="24" stroke-linecap="round"/>
+  <rect x="352" y="568" width="320" height="32" rx="16" fill="#D9C9A8"/>
+  <path d="M382 588 H642 A130 130 0 0 1 382 588 Z" fill="#FDF3E3"/>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Pasa · Ring & Bowl · foreground (light) -->
+  <!-- 270° progress ring, gap at top for the steam -->
+  <circle cx="512" cy="512" r="330" fill="none" stroke="#E85D3D" stroke-width="56"
+          stroke-linecap="round" stroke-dasharray="1555 2073" transform="rotate(135 512 512)"/>
+  <!-- Steam -->
+  <path d="M452 520 V400" stroke="#E85D3D" stroke-width="24" stroke-linecap="round"/>
+  <path d="M512 520 V370" stroke="#E85D3D" stroke-width="24" stroke-linecap="round"/>
+  <path d="M572 520 V400" stroke="#E85D3D" stroke-width="24" stroke-linecap="round"/>
+  <!-- Bowl rim -->
+  <rect x="352" y="568" width="320" height="32" rx="16" fill="#C7452A"/>
+  <!-- Bowl -->
+  <path d="M382 588 H642 A130 130 0 0 1 382 588 Z" fill="#E85D3D"/>
+</svg>

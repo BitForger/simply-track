@@ -1,0 +1,175 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "display-p3:0.13516,0.12593,0.10800,1.00000"
+      }
+    },
+    {
+      "appearance" : "light",
+      "value" : {
+        "solid" : "display-p3:0.97747,0.94661,0.89248,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "strike-light.svg",
+          "name" : "strike-light"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.24055,0.41046,0.31717,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.97908,0.95437,0.89730,1.00000"
+              }
+            }
+          ],
+          "image-name" : "path2.png",
+          "name" : "path2",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -80,
+              -137
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.24055,0.41046,0.31717,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.98554,0.95467,0.89692,1.00000"
+              }
+            }
+          ],
+          "image-name" : "path1.png",
+          "name" : "path1",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0.5,
+              -154.5
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.24055,0.41046,0.31717,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.97908,0.95437,0.89730,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Path.png",
+          "name" : "Path",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              83,
+              -137
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "strike",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.16747,0.29797,0.22543,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.84038,0.79023,0.67311,1.00000"
+              }
+            }
+          ],
+          "image-name" : "path4.png",
+          "name" : "path4",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              50
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "display-p3:0.24055,0.41046,0.31717,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.98554,0.95467,0.89692,1.00000"
+              }
+            }
+          ],
+          "image-name" : "path3.png",
+          "name" : "path3",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              160
+            ]
+          }
+        }
+      ],
+      "name" : "bowl",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

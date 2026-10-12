@@ -102,7 +102,7 @@ struct HomeDashboardView: View {
                     .font(.footnote)
             }
         }
-        .navigationTitle("Simply Track")
+        .navigationTitle("Pasa")
     }
 
     private var dailyCard: some View {

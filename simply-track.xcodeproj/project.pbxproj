@@ -267,7 +267,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "simply-track/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Simply Track";
+				INFOPLIST_KEY_CFBundleDisplayName = Pasa;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "To read and validate saved calorie counts";
@@ -326,7 +326,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "simply-track/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Simply Track";
+				INFOPLIST_KEY_CFBundleDisplayName = Pasa;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "To read and validate saved calorie counts";
