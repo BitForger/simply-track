@@ -1,6 +1,6 @@
-# Simply Track
+# Pasa
 
-Simply Track is a SwiftUI calorie tracking app built on SwiftData. It focuses on fast food logging, clear daily and weekly progress, and optional HealthKit integration.
+Pasa is a SwiftUI calorie tracking app built on SwiftData. It focuses on fast food logging, clear daily and weekly progress, and optional HealthKit integration.
 
 ## Highlights
 
@@ -19,8 +19,8 @@ Simply Track is a SwiftUI calorie tracking app built on SwiftData. It focuses on
 
 ## Run Locally
 
-1. Open `simply-track.xcodeproj` in Xcode.
-2. Select the `simply-track` scheme.
+1. Open `Pasa.xcodeproj` in Xcode.
+2. Select the `Pasa` scheme.
 3. Pick a simulator or connected device.
 4. Build and run.
 
@@ -29,7 +29,7 @@ On first launch, the app creates a default `UserProfile` and seeds base food cat
 ## Current Project Layout
 
 ```text
-simply-track/
+pasa/
 ├── ContentView.swift                    # Root container, tab wiring, orchestration
 ├── HomeDashboardView.swift              # Daily/weekly cards, streaks, metabolism summary
 ├── LogEntriesView.swift                 # Entry list, edit/delete flows, history shortcuts
@@ -57,7 +57,7 @@ simply-track/
 │       ├── SimplyTrackSchemaV6.swift
 │       ├── SimplyTrackSchemaV7.swift
 │       └── SimplyTrackMigrationPlan.swift
-└── simply_trackApp.swift                # App entry, model container setup, persistence fallback
+└── PasaApp.swift                        # App entry, model container setup, persistence fallback
 ```
 
 ## Data Model Snapshot
@@ -70,8 +70,8 @@ Active schema is `SimplyTrackSchemaV7`.
 
 ## Testing
 
-- Unit tests live in `simply-trackTests/simply_trackTests.swift`.
-- Current shared scheme includes the `simply-trackTests` test bundle.
+- Unit tests live in `PasaTests/PasaTests.swift`.
+- Current shared scheme includes the `PasaTests` test bundle.
 - Most recent run in this workspace context: 8 passed, 0 failed.
 
 ## Additional Docs
@@ -82,7 +82,7 @@ Active schema is `SimplyTrackSchemaV7`.
 
 ## Support
 
-If Simply Track is useful to you, you can support development on [Ko-fi](https://ko-fi.com/bitforger).
+If Pasa is useful to you, you can support development on [Ko-fi](https://ko-fi.com/bitforger).
 
 ## Sync UX Notes (Oct 2026)
 

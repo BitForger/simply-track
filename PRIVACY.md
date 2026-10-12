@@ -2,11 +2,11 @@
 
 **Effective date:** September 18, 2026
 
-Simply Track ("Simply Track," "we," or "the app") is a calorie-tracking app maintained by Bitforger. This Privacy Policy explains what information the app handles and how it is used.
+Pasa ("Pasa," "we," or "the app") is a calorie-tracking app maintained by Bitforger. This Privacy Policy explains what information the app handles and how it is used.
 
 ## Information the App Handles
 
-Depending on the features you use, Simply Track may handle:
+Depending on the features you use, Pasa may handle:
 
 - Profile information, such as your age, biological sex, height, weight, activity level, nutrition goal, and weight-loss pace.
 - Food and calorie entries, including food names, amounts, calorie values, dates, and times.
@@ -29,11 +29,11 @@ The app does not use your information for advertising, profiling, or sale.
 
 ## Storage and Sharing
 
-Simply Track stores its app data locally on your device using Apple's SwiftData framework. Based on the current app implementation, Simply Track does not operate a developer-controlled server, user account system, analytics service, or advertising SDK, and it does not send your personal or health information to Bitforger.
+Pasa stores its app data locally on your device using Apple's SwiftData framework. Based on the current app implementation, Pasa does not operate a developer-controlled server, user account system, analytics service, or advertising SDK, and it does not send your personal or health information to Bitforger.
 
 When you enable HealthKit features, information is exchanged with Apple Health according to the permissions you approve in Apple's HealthKit authorization prompt. The app may read dietary energy and active energy, and may write dietary energy entries to Apple Health. Apple handles HealthKit data under Apple's own terms and privacy policies.
 
-Except for the Apple Health exchange you explicitly authorize, Simply Track does not share your information with other companies. The project may include links to third-party websites, including Ko-fi. Opening those links takes you outside the app and is subject to the third party's privacy policy and terms.
+Except for the Apple Health exchange you explicitly authorize, Pasa does not share your information with other companies. The project may include links to third-party websites, including Ko-fi. Opening those links takes you outside the app and is subject to the third party's privacy policy and terms.
 
 ## Notifications
 
@@ -53,7 +53,7 @@ Because the app does not maintain a developer-controlled account or server, Bitf
 
 ## Children's Privacy
 
-Simply Track is not directed to children under 13. We do not knowingly collect personal information from children.
+Pasa is not directed to children under 13. We do not knowingly collect personal information from children.
 
 ## Changes to This Policy
 
@@ -61,4 +61,4 @@ This Privacy Policy may be updated when the app's data practices change. The lat
 
 ## Contact
 
-For questions about this Privacy Policy or Simply Track's privacy practices, please open an issue in the project repository or use the project's published support channel.
+For questions about this Privacy Policy or Pasa's privacy practices, please open an issue in the project repository or use the project's published support channel.

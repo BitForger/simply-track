@@ -1,4 +1,4 @@
-# GitHub Copilot Instructions — Simply Track
+# GitHub Copilot Instructions — Pasa
 
 These instructions apply to all code generated or edited in this repository. Read them fully before proposing changes. When instructions conflict with habit or a generic pattern, follow this file.
 
@@ -8,7 +8,7 @@ These instructions apply to all code generated or edited in this repository. Rea
 
 ## 1. Project Context
 
-- **App:** Simply Track — privacy-first, local-first iOS calorie tracker.
+- **App:** Pasa — privacy-first, local-first iOS calorie tracker.
 - **Stack:** SwiftUI, SwiftData, Swift concurrency (`async`/`await`), Combine (legacy `@Published` in a few coordinators). No third-party dependencies. No SPM/CocoaPods packages — do not add any without an explicit request.
 - **Targets:** Xcode 16+, iOS 18+ deployment target. Write code that uses current APIs; do not guard for OS versions older than the deployment target unless one already exists nearby.
 - **Privacy:** On-device first. No analytics, no telemetry, no third-party SDKs, no network calls except what HealthKit/CloudKit already do. HealthKit and notification permissions are optional — features must degrade gracefully when denied.
@@ -20,7 +20,7 @@ In order of importance: **reliability → cleanliness → maintainability.** Nev
 ### Reliability
 
 - User data is sacred. Never lose or corrupt entries. All persistence changes must be safe against interruption.
-- Never crash on recoverable failure. `preconditionFailure` / `fatalError` / force-unwrap (`!`) / `try!` / `as!` are forbidden in app code unless the failure is genuinely unrecoverable (the existing container-creation fallback in `simply_trackApp.swift` is the model example). Tests may use force unwraps for fixture setup.
+- Never crash on recoverable failure. `preconditionFailure` / `fatalError` / force-unwrap (`!`) / `try!` / `as!` are forbidden in app code unless the failure is genuinely unrecoverable (the existing container-creation fallback in `PasaApp.swift` is the model example). Tests may use force unwraps for fixture setup.
 - Handle errors explicitly. Surface user-facing failures through observable state (e.g. `syncMessage`, `PersistenceStatus.error`), not silent swallowing and not `print()`-only logging in new code.
 - All calorie/week math must be deterministic and testable. Views never contain nutrition math — they call services.
 
@@ -28,7 +28,7 @@ In order of importance: **reliability → cleanliness → maintainability.** Nev
 
 - Write idiomatic, modern Swift. Prefer clarity over compactness. No single-letter names, no abbreviations, no `self.` unless required.
 - Follow existing naming and formatting. Look at neighboring files before introducing a new style. Match `// MARK: -` usage for logical sections in longer files.
-- Keep the file header comment block (`//  FileName.swift //  simply-track //  Created by ...`) pattern used throughout the project.
+- Keep the file header comment block (`//  FileName.swift //  pasa //  Created by ...`) pattern used throughout the project.
 - No dead code, no commented-out code, no `// TODO` left behind — either do it or track it outside the code.
 - No duplicated logic. If a calculation or merge rule exists in a service, call it; never reimplement it inline in a view.
 
@@ -64,7 +64,7 @@ In order of importance: **reliability → cleanliness → maintainability.** Nev
 ## 4. SwiftData & Persistence Rules (highest-risk area)
 
 - **Active schema is `SimplyTrackSchemaV7`.** Never edit a historical schema (`V1`–`V6`) — they are frozen migration snapshots.
-- Any model change requires: a **new** `SimplyTrackSchemaVN+1` enum, a migration stage added to `SimplyTrackMigrationPlan`, and container setup in `simply_trackApp.swift` pointed at the new version. Lightweight vs. custom migration must be a deliberate choice, documented in code.
+- Any model change requires: a **new** `SimplyTrackSchemaVN+1` enum, a migration stage added to `SimplyTrackMigrationPlan`, and container setup in `PasaApp.swift` pointed at the new version. Lightweight vs. custom migration must be a deliberate choice, documented in code.
 - Never mutate stored properties of a shipped schema version in place.
 - All writes go through the shared `ModelContext`; save explicitly after mutations that must persist, and keep save failures observable.
 - Follow the startup resilience pattern: backup before destructive recovery, prune backups, degrade CloudKit → local gracefully. Do not add new persistence paths that bypass this.
@@ -79,7 +79,7 @@ In order of importance: **reliability → cleanliness → maintainability.** Nev
 
 ## 6. Testing Requirements
 
-- Tests live in `simply-trackTests/simply_trackTests.swift` using **XCTest** (`XCTestCase`, `XCTAssert...`, `@testable import simply_track`). Do not introduce Swift Testing or other frameworks.
+- Tests live in `PasaTests/PasaTests.swift` using **XCTest** (`XCTestCase`, `XCTAssert...`, `@testable import pasa`). Do not introduce Swift Testing or other frameworks.
 - Write tests for: every new calculation, every migration stage, dedup/merge heuristics, and boundary conditions (week edges, empty states, zero targets).
 - Use the existing deterministic-date helper pattern (fixed UTC calendar) so tests are timezone-independent.
 - Tests must be hermetic: no real HealthKit, no real UserDefaults pollution, no reliance on device locale/timezone.
@@ -93,13 +93,13 @@ In order of importance: **reliability → cleanliness → maintainability.** Nev
 - `guard` for early exits; avoid deep nesting.
 - Errors: define `LocalizedError` enums with `errorDescription` / `failureReason` / `recoverySuggestion` for user-facing failures (pattern: `PersistenceStatus.PersistenceError`).
 - Dates/formatting: use `Date.now`, `.formatted(...)`, and injected `Calendar` — never assume `Calendar.current` in calculations (inject it, as tests do).
-- No magic numbers in view logic; named constants (`private static let`) as in `simply_trackApp.swift`.
+- No magic numbers in view logic; named constants (`private static let`) as in `PasaApp.swift`.
 
 ## 8. What NOT to do
 
 - Do not add third-party packages, analytics, crash reporters, ads, or network calls.
 - Do not refactor working code gratuitously; change only what the task requires, plus directly adjacent cleanup.
-- Do not rename the project/target (`simply-track` / `simply_track`) or restructure the folder layout without an explicit request.
+- Do not rename the project/target (`Pasa` / `pasa`) or restructure the folder layout without an explicit request.
 - Do not weaken error handling, remove fallbacks, or silence failures to make code "cleaner."
 - Do not introduce `ObservableObject` in new types, `DispatchQueue` where actors suffice, or completion-handler APIs where `async` fits.
 - Do not modify `ci_scripts/`, `Info.plist`, entitlements, or the Xcode project unless the task explicitly requires it — and call it out clearly when you do.

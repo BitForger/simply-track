@@ -1,10 +1,10 @@
-# SimplyTrack Architecture Guide
+# Pasa Architecture Guide
 
-This document describes the current architecture and major data flows for Simply Track.
+This document describes the current architecture and major data flows for Pasa.
 
 ## Overview
 
-Simply Track is a SwiftUI + SwiftData app with three primary user surfaces:
+Pasa is a SwiftUI + SwiftData app with three primary user surfaces:
 
 - `HomeDashboardView` for daily/weekly status.
 - `LogEntriesView` for entry CRUD.
@@ -15,7 +15,7 @@ Simply Track is a SwiftUI + SwiftData app with three primary user surfaces:
 ## Workspace Structure
 
 ```text
-simply-track/
+pasa/
 ├── ContentView.swift
 ├── HomeDashboardView.swift
 ├── LogEntriesView.swift
@@ -46,7 +46,7 @@ simply-track/
 │       ├── SimplyTrackSchemaV6.swift
 │       ├── SimplyTrackSchemaV7.swift
 │       └── SimplyTrackMigrationPlan.swift
-└── simply_trackApp.swift
+└── PasaApp.swift
 ```
 
 ## Core Domain Models
@@ -138,7 +138,7 @@ Important behavior:
 
 ## Persistence and Startup
 
-### App entry (`simply_trackApp.swift`)
+### App entry (`PasaApp.swift`)
 
 - Builds SwiftData container from `SimplyTrackSchemaV7.models`.
 - Supports iCloud-backed mode (`useCloudKitPersistence`) with local fallback.
@@ -166,7 +166,7 @@ Migration helpers:
 
 ## Test Coverage Snapshot
 
-Primary tests are in `simply-trackTests/simply_trackTests.swift` and cover:
+Primary tests are in `PasaTests/PasaTests.swift` and cover:
 
 - V6 duplicate-resolution heuristics for entries, catalog items, and profiles.
 - Week-range boundary semantics.

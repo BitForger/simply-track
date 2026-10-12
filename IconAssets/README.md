@@ -35,7 +35,7 @@ IconAssets/
    tinted tab; customize later only if the auto render loses the glyph.
 7. Preview at all sizes (especially 60 pt / notification size) and in dark + tinted modes.
 8. Save the `.icon` file, then drop it into the app's asset catalog
-   (e.g. `simply-track/Assets.xcassets`). Legacy PNG sizes for older iOS versions
+   (e.g. `pasa/Assets.xcassets`). Legacy PNG sizes for older iOS versions
    are generated automatically from the `.icon`.
 
 ## Design notes
